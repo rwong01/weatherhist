@@ -213,34 +213,75 @@ test('values outside the edges clamp rather than vanish', () => {
   assert.strictEqual(sum(chart.binValues([-99, 999], edges)), 2);
 });
 
-// --- the variable table ------------------------------------------------------
+// --- the field table ---------------------------------------------------------
 
-test('every variable is completely specified and uniquely named', () => {
-  const seen = new Set();
-  for (const v of weather.VARIABLES) {
-    assert.ok(!seen.has(v.id), `duplicate id ${v.id}`);
-    seen.add(v.id);
-    for (const key of ['group', 'label', 'short', 'hourly', 'agg', 'unit']) {
-      assert.ok(v[key], `${v.id} is missing ${key}`);
+test('every field is completely specified and uniquely keyed', () => {
+  const seenFields = new Set();
+  const seenIds = new Set();
+  for (const field of weather.FIELDS) {
+    assert.ok(!seenFields.has(field.hourly), `duplicate field ${field.hourly}`);
+    seenFields.add(field.hourly);
+    for (const key of ['label', 'short', 'group', 'unit']) {
+      assert.ok(field[key], `${field.hourly} is missing ${key}`);
     }
-    assert.ok(['max', 'min', 'sum', 'mean'].includes(v.agg), `${v.id} has an odd aggregation`);
-    assert.ok(Number.isInteger(v.decimals), `${v.id} has no decimal precision`);
+    assert.ok(Number.isInteger(field.decimals), `${field.hourly} has no decimal precision`);
+    assert.ok(field.aggregations.length >= 1, `${field.hourly} has no aggregations`);
+
+    for (const a of field.aggregations) {
+      assert.ok(!seenIds.has(a.id), `duplicate aggregation id ${a.id}`);
+      seenIds.add(a.id);
+      assert.ok(['max', 'min', 'sum', 'mean'].includes(a.agg), `${a.id} has an odd aggregation`);
+      assert.ok(a.label && a.short, `${a.id} is missing a label`);
+    }
   }
+});
+
+test('variables are the flattened (field, aggregation) pairs', () => {
+  assert.strictEqual(
+    weather.VARIABLES.length,
+    sum(weather.FIELDS.map((f) => f.aggregations.length))
+  );
+  // Every variable carries its field's presentation, so a panel can read either.
+  for (const v of weather.VARIABLES) {
+    assert.strictEqual(v.hourly, v.field.hourly);
+    assert.strictEqual(v.unit, v.field.unit);
+    assert.strictEqual(v.group, v.field.group);
+  }
+});
+
+test('fields that answer several aggregations are the point of the design', () => {
+  const shared = weather.FIELDS.filter((f) => f.aggregations.length > 1);
+  assert.ok(shared.length >= 8, `only ${shared.length} multi-aggregation fields`);
+  // One request for temperature_2m yields max, min and mean.
+  const temp = weather.getField('temperature_2m');
+  assert.deepStrictEqual(temp.aggregations.map((a) => a.agg), ['max', 'min', 'mean']);
+  assert.deepStrictEqual(
+    weather.variablesOf(temp).map((v) => v.id),
+    ['temp_max', 'temp_min', 'temp_mean']
+  );
+});
+
+test('fields cost less than options: 41 metrics from 32 requests-worth of fields', () => {
+  assert.strictEqual(weather.FIELDS.length, 32);
+  assert.strictEqual(weather.VARIABLES.length, 41);
+  // Selecting six fields is one call per year; selecting six options used to be six.
+  assert.strictEqual(weather.callWeight(weather.FIELDS.length > 6 ? 6 : 6, 14), 1);
 });
 
 test('variables a histogram would misrepresent stay out of the list', () => {
   const excluded = /wind_direction|weather_code|global_tilted/;
-  assert.ok(!weather.VARIABLES.some((v) => excluded.test(v.hourly)));
+  assert.ok(!weather.FIELDS.some((f) => excluded.test(f.hourly)));
 });
 
-test('grouping covers every variable exactly once', () => {
-  const groups = weather.variableGroups();
-  assert.strictEqual(sum(groups.map(([, vs]) => vs.length)), weather.VARIABLES.length);
+test('grouping covers every field exactly once', () => {
+  const groups = weather.fieldGroups();
+  assert.strictEqual(sum(groups.map(([, fs]) => fs.length)), weather.FIELDS.length);
 });
 
-test('an unknown variable id falls back rather than throwing', () => {
-  assert.ok(weather.getVariable('nope').id);
-  assert.strictEqual(weather.getVariable('temp_max').id, 'temp_max');
+test('unknown ids fall back rather than throwing', () => {
+  assert.ok(weather.getField('nope').hourly);
+  assert.strictEqual(weather.getField('temperature_2m').hourly, 'temperature_2m');
+  assert.strictEqual(weather.getVariable('temp_min').agg, 'min');
 });
 
 // --- API call cost -----------------------------------------------------------
@@ -249,6 +290,8 @@ test('a request within the free variable and day allowances is one call', () => 
   assert.strictEqual(weather.callWeight(1, 14), 1);
   assert.strictEqual(weather.callWeight(10, 14), 1);
   assert.strictEqual(weather.callWeight(3, 7), 1, 'a short window is not cheaper than one call');
+  // The whole reason the cap is 6 rather than 3: six fields still cost one call.
+  assert.strictEqual(weather.callWeight(6, 14), 1);
 });
 
 test('the weighting matches the published examples', () => {
@@ -258,15 +301,18 @@ test('the weighting matches the published examples', () => {
   assert.strictEqual(weather.callWeight(15, 28), 3);
 });
 
-test('batching variables is free up to ten, which is why one request per year wins', () => {
-  const oneAtATime = 3 * weather.callWeight(1, 365);
-  const batched = weather.callWeight(3, 365);
-  assert.ok(Math.abs(batched - oneAtATime / 3) < 1e-9, 'three variables cost the same as one');
+test('batching fields is free up to ten, which is why one request per year wins', () => {
+  const oneAtATime = 6 * weather.callWeight(1, 365);
+  const batched = weather.callWeight(6, 365);
+  assert.ok(Math.abs(batched - oneAtATime / 6) < 1e-9, 'six fields cost the same as one');
+  // Past ten it is linear, so "ask for everything" is not free.
+  assert.strictEqual(weather.callWeight(20, 14), 2);
+  assert.ok(weather.callWeight(32, 14) > 3, 'all 32 fields cost >3x');
 });
 
 test('a narrow window over 30 years is far cheaper than one continuous range', () => {
   const years = Array.from({ length: 30 }, (_, i) => 1996 + i);
-  const perYear = weather.estimateCalls({ years, startMD: '06-15', endMD: '06-30', variableCount: 3 });
+  const perYear = weather.estimateCalls({ years, startMD: '06-15', endMD: '06-30', fieldCount: 3 });
   const merged = weather.callWeight(3, sum(years.map((y) => weather.daysInWindow(y, '06-15', '06-30'))));
   assert.ok(perYear < 40, `per-year cost ${perYear}`);
   // Same weight for a full year, but a narrow window would download 23x the data.
@@ -275,7 +321,7 @@ test('a narrow window over 30 years is far cheaper than one continuous range', (
 
 test('a full-year 30-year query is expensive enough to be worth showing', () => {
   const years = Array.from({ length: 30 }, (_, i) => 1996 + i);
-  const calls = weather.estimateCalls({ years, startMD: '01-01', endMD: '12-31', variableCount: 3 });
+  const calls = weather.estimateCalls({ years, startMD: '01-01', endMD: '12-31', fieldCount: 3 });
   assert.ok(calls > 700 && calls < 800, `got ${calls}`);
 });
 

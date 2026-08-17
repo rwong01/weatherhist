@@ -635,6 +635,7 @@ button:disabled {
 }
 
 .multiselect-field {
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -686,9 +687,12 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
+  background: none;
   color: var(--text-secondary);
   font-size: 0.95rem;
   line-height: 1;
@@ -754,6 +758,18 @@ button:disabled {
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.option-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+/* Which aggregations one pick yields — the field answers all of them at once. */
+.option-aggs {
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 
@@ -875,6 +891,41 @@ button:disabled {
   margin: 0.2rem 0 0;
   font-size: 0.875rem;
   color: var(--text-secondary);
+}
+
+/*
+ * Switches between the aggregations of one field. They arrived in the same response,
+ * so this is a free, instant switch — styled as a segmented control to say so, rather
+ * than as something that triggers work.
+ */
+.variant-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.variant-toggle button {
+  padding: 0.3rem 0.85rem;
+  font-size: 0.8125rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.variant-toggle button:hover {
+  color: var(--text-primary);
+}
+
+.variant-toggle button[aria-pressed='true'] {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 /* Colour swatch tying a stats row / table column to its series. */

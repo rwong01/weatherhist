@@ -6,7 +6,8 @@ the calendar across the past 10, 20, or 30 years at any location.
 > "Show me the distribution of max daily wind gust for June 15–30 over the past
 > 10 years at this address."
 
-Pick a place, a month/day range, one to three lookback windows, and a variable; the
+Pick a place, a month/day range, one to three lookback windows, and up to six
+variables; the
 app pulls hourly ECMWF reanalysis from [Open-Meteo](https://open-meteo.com/), reduces
 it to one value per day, and plots the histogram with mean/median/min/max/σ and
 percentiles. See [Data source](#data-source) for which reanalysis, and why it's a
@@ -31,8 +32,8 @@ node test/logic.test.mjs
 No dependencies and no runner to install — the suite covers the pure logic the rest
 of the app rests on: the calendar-window maths (including leap days and windows that
 wrap the new year), which years get requested, hourly-to-daily aggregation, the
-summary statistics, binning and shared bin edges, the variable table's integrity,
-cache-key separation, and CSV/filename escaping.
+summary statistics, binning and shared bin edges, the field table's integrity, the
+API call-weight model, cache-key separation and eviction, and CSV/filename escaping.
 
 The DOM-facing layers — typeahead, theme control, the variable picker, chart
 rendering and the exports — are verified by driving a real browser instead, since
@@ -59,7 +60,7 @@ no API key.
 | `style.css`      | Theme tokens (light + selected dark mode) and layout                  |
 | `app.js`         | Control wiring and render orchestration                               |
 | `lib/geocode.js` | Open-Meteo geocoding (typeahead + explicit), raw `lat, long` parsing  |
-| `lib/weather.js` | Variable table, season-year math, archive fetch, daily aggregation    |
+| `lib/weather.js` | Field/metric table, season-year math, archive fetch, aggregation       |
 | `lib/cache.js`   | `localStorage` cache, keyed per location/variable/window/year/model    |
 | `lib/recent.js`  | Recent locations for this browser session (`sessionStorage`)           |
 | `lib/chart.js`   | Binning, summary statistics, histogram rendering                       |
@@ -94,24 +95,28 @@ more than 10 variables, or more than 2 weeks of data, costs proportionally more
 
 Two consequences shape the request strategy:
 
-- **Up to 10 variables ride along in one request for free.** All selected variables
-  are fetched together, one request per year, so three variables cost the same as
-  one. That is an exact 3× saving: a 3-variable 30-year query went from 90 requests /
-  103 weighted calls to 30 requests / 34.
+- **Up to 10 hourly fields ride along in one request for free.** Every selected field
+  is fetched together, one request per year, so six cost the same as one. When this
+  was one request per metric, a 3-metric 30-year query took 90 requests / 103
+  weighted calls; it is now 30 / 34, and would still be 30 / 34 with six fields.
+  Past ten fields the weight is linear, so "ask for everything" is not free — all 32
+  fields would cost 3.2×.
 - **The day factor is proportional, so merging years saves nothing.** One continuous
   30-year range weighs the same as 30 per-year requests, while downloading ~23× the
   data for a narrow window. Per-year requests are the cheap shape and stay.
 
-Variables that share an hourly field are only asked for once — max, min and mean
-temperature all read `temperature_2m`.
+This is also why selection is by field rather than by metric: max, min and mean
+temperature all read `temperature_2m`, so asking for the field once answers all three
+and the panel toggles between them for free. See [Variables](#variables).
 
 **What a query costs is shown before you run it**, in the date-range note, because
 the range dominates everything else: Jun 15–30 over 30 years is ~35 calls, but a
 *full year* over 30 years is ~780. The free daily quota is about 12 of the latter.
 
-Cached years cost nothing, and the cache is per (location, variable, window, year,
-model), so re-running a query, widening the lookback, or swapping one variable all
-fetch only what's genuinely missing.
+Cached years cost nothing, and the cache is per (location, metric, window, year,
+model), so re-running a query, widening the lookback, or swapping one field all fetch
+only what's genuinely missing. A field whose max is cached but whose mean is not is
+re-requested — but only that field, and it comes back with everything.
 
 Two things make the cache pull its weight:
 
@@ -188,33 +193,36 @@ change to the unit request parameters can't silently mislabel an axis.
 
 ## Variables
 
-**Up to three at a time**, chosen in a searchable token field: the closed field shows
-what's selected, opening it reveals a search box over the full grouped list with a
-tick box per row. Selecting and deselecting are the same gesture in the same place,
-and typing narrows 41 options instead of scrolling them (searching a group name like
-"soil" or "wind" keeps the whole group). At three, unselected rows go visibly inert
-while the selected ones still toggle off. Tokens carry their own × for removal, and
-the whole thing is keyboard-driven — type to filter, arrows to move, Space or Enter to
-toggle, Escape to close.
+Selection is by **hourly field**, not by metric, because that is what the archive
+actually serves: daily max, min and mean temperature all read `temperature_2m`, and
+one request returns the array they're all derived from. So picking
+"Temperature (2 m)" gets you all three, and the panel switches between them with a
+toggle — instantly, with no further request.
 
-Every selected variable gets its own panel — title,
-stats, histogram, data table, and its own PNG and CSV buttons — all sharing the same
-location, date window, lookback windows and reanalysis. Removing a token drops that
-panel without refetching the others.
+**Up to 6 fields at a time.** The cap isn't about quota: up to ten fields ride in one
+request for the price of one call, so six costs exactly what one does. Six is where
+the *other* costs bite — a full-year 30-year query is roughly 2 MB of JSON per field,
+and six fields' daily aggregates already take about half of `localStorage`'s ~5 MB.
 
-Variables are *not* plotted together: they're different quantities in different
-units, so each panel computes its own bin edges. Only lookback windows share a chart.
+32 fields across 7 groups yield 41 metrics. Each is chosen in a searchable token
+field: the closed field shows what's selected, opening it reveals a search box over
+the grouped list with a tick box per row, and rows that yield several metrics say so
+underneath. Selecting and deselecting are the same gesture in the same place, and
+typing narrows the list rather than scrolling it (a group name like "soil" or "wind"
+keeps the whole group). At six, unselected rows go visibly inert while the selected
+ones still toggle off. Fully keyboard-driven — type to filter, arrows to move, Space
+or Enter to toggle, Escape to close.
 
-All the variables' requests share one concurrency pool, so three variables aren't
-three times slower than one.
+Every selected field gets its own panel: title, aggregation toggle, stats, histogram,
+data table, and its own PNG and CSV buttons — all sharing the query's location, date
+window, lookback windows and reanalysis. Removing a token drops that panel without
+refetching the others.
 
-41 options across 7 groups: temperature & humidity, wind, precipitation, pressure &
-cloud, solar radiation, soil, and evapotranspiration. Each pairs an hourly variable
-with the daily aggregation that suits it (max, min, sum, or mean) — temperature is
-offered as max, min, and mean separately.
+Fields are *not* plotted together: they're different quantities in different units,
+so each panel bins independently. Only lookback windows share a chart.
 
-Four things the archive offers are deliberately **not** in the dropdown, because a
-histogram of them would mislead:
+Four things the archive offers are deliberately **absent**, because a histogram of
+them would mislead:
 
 - `wind_direction_10m` / `_100m` — circular degrees. Averaging 350° and 10° gives
   180°, the opposite direction. Direction needs a wind rose (a v1 non-goal).
@@ -224,15 +232,18 @@ histogram of them would mislead:
 
 ## Exports
 
-Each result panel carries its own pair of buttons, so a three-variable query yields
-three PNGs and three CSVs. Filenames encode the variable, date window and lookbacks,
-so they don't collide.
+Each panel carries its own pair of buttons, so a six-field query yields six PNGs and
+six CSVs. Filenames encode the metric, date window and lookbacks, so they don't
+collide.
 
-- **PNG** — the histogram composited onto an opaque background with its title,
-  subtitle, and attribution, so the image stands on its own.
-- **CSV** — one row per bin, a days/share column pair per window, and a provenance
-  block (variable, aggregation, coordinates, year spans, model, source) below the
-  data so the header row stays first for spreadsheet imports.
+- **PNG** — the histogram currently on screen, composited onto an opaque background
+  with its title, subtitle and attribution, so the image stands on its own.
+- **CSV** — **every aggregation of that field in one file**, since they all came from
+  the same request. Long format: an `aggregation` column, then `bin_start`/`bin_end`,
+  then a days/share column pair per lookback window. Long rather than a block per
+  aggregation because each one bins onto its own edges, and one flat table imports
+  cleanly. A provenance block (field, hourly variable, aggregations, coordinates,
+  year spans, model, source) sits below the data so the header row stays first.
 
 See [`PROJECT_SPEC.md`](PROJECT_SPEC.md) for the full v1 scope and non-goals.
 

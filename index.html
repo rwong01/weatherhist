@@ -202,11 +202,16 @@
           <h2 class="field-group-title">4 · Weather variable</h2>
           <div class="row">
             <div class="grow multiselect">
-              <span class="label-text" id="variable-label">Variables (up to 3)</span>
-              <button
-                type="button"
+              <span class="label-text" id="variable-label">Variables (up to 6)</span>
+              <!--
+                A div with role="button" rather than a <button>: it contains the
+                per-token remove buttons, and nested buttons are invalid HTML.
+              -->
+              <div
                 id="variable-toggle"
                 class="multiselect-field"
+                role="button"
+                tabindex="0"
                 aria-haspopup="listbox"
                 aria-expanded="false"
                 aria-controls="variable-panel"
@@ -216,7 +221,7 @@
                 <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="m6 9.5 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </div>
 
               <div id="variable-panel" class="multiselect-panel" hidden>
                 <input
@@ -277,6 +282,13 @@
               </button>
             </div>
           </div>
+
+          <!--
+            Aggregations that came back from the same request — daily max, min and
+            mean all read one hourly field — so switching between them is free.
+            Populated only when the field has more than one.
+          -->
+          <div class="variant-toggle" role="group" hidden></div>
 
           <!-- A tile grid for one window, or a comparison table for several. -->
           <div class="stats-slot"></div>

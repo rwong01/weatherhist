@@ -236,11 +236,19 @@ plain DOM updates are fine given the app's scope.
   under a key outside the data-cache namespace, so "Clear cache" doesn't reset it.
 - Date range quick-select for "Full year (Jan 1 - Dec 31)"; hand-editing the
   month/day pickers drops the preset back to "Custom".
-- Variable **searchable token field**, up to three at a time. The closed field shows
+- Selection is by **hourly field**, not by metric: the archive serves one array per
+  field and several metrics derive from it (max/min/mean temperature all read
+  `temperature_2m`), so the field is the unit of both fetching and picking. Each
+  panel carries a toggle to switch between its field's aggregations — free, because
+  they arrived together — and its CSV contains all of them.
+- Variable **searchable token field**, up to six fields at a time. Six rather than
+  three because ten fields cost one API call, so the cap is set by payload size and
+  `localStorage` rather than quota. The closed field shows
   the selection as tokens (each with its own ×); opening it reveals a search box over
   the grouped list, one tick box per row, so selecting and deselecting happen in the
   same place. Search matches variable and group names. At the cap, unselected rows
-  are `aria-disabled` and visibly inert while selected rows still toggle off.
+  are `aria-disabled` and visibly inert while selected rows still toggle off. Rows
+  that yield several metrics list them underneath.
   Keyboard: type to filter, arrows to move, Space/Enter to toggle, Escape to close. Every selected variable renders its own result panel with its own stats,
   histogram, data table and PNG/CSV buttons, all sharing the query's other
   parameters. Variables are never plotted together — different quantities in

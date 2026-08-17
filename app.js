@@ -2,8 +2,9 @@
 
 import { geocode, parseLatLon, formatPlace, GeocodeError } from './lib/geocode.js';
 import {
-  variableGroups,
-  getVariable,
+  fieldGroups,
+  getField,
+  variablesOf,
   MODELS,
   DEFAULT_MODEL,
   getModel,
@@ -49,8 +50,13 @@ const THEME_KEY = 'weatherhist:theme';
 const SUGGEST_DEBOUNCE_MS = 250;
 const SUGGEST_MIN_CHARS = 2;
 
-// Three keeps one query's cost bounded: three variables x 30 years is 90 requests.
-const MAX_VARIABLES = 3;
+/**
+ * Up to 10 hourly fields ride in one request for the price of one API call, so the
+ * cap is not about quota. Six is where the other costs start to bite: a full-year
+ * 30-year query is roughly 2 MB of JSON per field, and the daily aggregates for six
+ * fields already take about half of localStorage's ~5 MB.
+ */
+const MAX_FIELDS = 6;
 
 /** Provenance line for exports — the model materially changes the numbers. */
 const sourceLine = (model) => `${ATTRIBUTION} · reanalysis: ${model.id}`;
@@ -90,8 +96,10 @@ const dom = {
 
 const state = {
   place: null,
-  /** Selected variable ids, in the order they were added. */
-  variableIds: ['wind_gust_max'], // the spec's motivating example
+  /** Selected hourly fields, in the order they were added. */
+  fieldIds: ['wind_gusts_10m'], // the spec's motivating example
+  /** Which aggregation each field's panel is currently showing: fieldId -> variableId. */
+  activeVariant: new Map(),
   /** Last successful fetch, kept so bin changes re-render without re-fetching. */
   result: null,
   inFlight: null,
@@ -359,7 +367,7 @@ function updateWindowNote() {
       years,
       startMD,
       endMD,
-      variableCount: Math.max(1, state.variableIds.length),
+      fieldCount: Math.max(1, state.fieldIds.length),
     });
     parts.push(`~${Math.ceil(calls)} API calls if not cached`);
   }
@@ -600,33 +608,39 @@ async function handleSearch() {
 
 // --- variable selection -------------------------------------------------------
 //
-// A token field over a searchable checkbox list. Selecting and deselecting are the
-// same gesture in the same place, and 41 options are reachable by typing rather than
-// by scrolling a native dropdown.
+// Selection is by *hourly field*, not by aggregation: one field answers every
+// aggregation derived from it, in the same response. Picking "Temperature (2 m)"
+// therefore gets max, min and mean together, and the panel switches between them
+// without another request.
 
 /** Compact summary shown in the closed field. */
 function renderTokens() {
   dom.variableTokens.replaceChildren();
 
-  if (state.variableIds.length === 0) {
+  if (state.fieldIds.length === 0) {
     dom.variableTokens.append(cell('span', 'Choose a variable…', 'tokens-placeholder'));
     return;
   }
 
-  for (const id of state.variableIds) {
-    const variable = getVariable(id);
+  for (const id of state.fieldIds) {
+    const field = getField(id);
     const token = document.createElement('span');
     token.className = 'token';
-    token.append(cell('span', variable.short));
+    token.append(cell('span', field.short));
 
-    const remove = document.createElement('span');
+    // A real button: keyboard reachable, and its own hit target rather than a slice
+    // of the field's. Nested buttons are invalid HTML, so the outer control is a div
+    // with a button role (see initVariablePicker) instead of a <button>.
+    const remove = document.createElement('button');
+    remove.type = 'button';
     remove.className = 'token-remove';
     remove.textContent = '×';
-    remove.title = `Remove ${variable.label}`;
-    // The field is a button, so removing must not also toggle the panel.
+    remove.title = `Remove ${field.label}`;
+    remove.setAttribute('aria-label', `Remove ${field.label}`);
+    // Removing must not also toggle the panel.
     remove.addEventListener('click', (event) => {
       event.stopPropagation();
-      toggleVariable(id);
+      toggleField(id);
     });
 
     token.append(remove);
@@ -637,34 +651,46 @@ function renderTokens() {
 /** Rebuild the option rows, honouring the current search text and the cap. */
 function renderOptions() {
   const query = dom.variableSearch.value.trim().toLowerCase();
-  const atCap = state.variableIds.length >= MAX_VARIABLES;
+  const atCap = state.fieldIds.length >= MAX_FIELDS;
   dom.variableOptions.replaceChildren();
 
   let shown = 0;
-  for (const [group, variables] of variableGroups()) {
+  for (const [group, fields] of fieldGroups()) {
     // Typing a group name ("wind") keeps the whole group, which is how people think.
-    const matches = variables.filter(
-      (v) => !query || v.label.toLowerCase().includes(query) || group.toLowerCase().includes(query)
+    const matches = fields.filter(
+      (f) =>
+        !query ||
+        f.label.toLowerCase().includes(query) ||
+        group.toLowerCase().includes(query) ||
+        f.aggregations.some((a) => a.label.toLowerCase().includes(query))
     );
     if (matches.length === 0) continue;
 
     dom.variableOptions.append(cell('div', group, 'option-group'));
 
-    for (const variable of matches) {
-      const selected = state.variableIds.includes(variable.id);
+    for (const field of matches) {
+      const selected = state.fieldIds.includes(field.hourly);
       const row = document.createElement('div');
       row.className = 'option-row';
       row.role = 'option';
-      row.id = `variable-option-${variable.id}`;
-      row.dataset.id = variable.id;
+      row.id = `variable-option-${field.hourly}`;
+      row.dataset.id = field.hourly;
       row.setAttribute('aria-selected', String(selected));
       // At the cap the unselected rows are inert; the selected ones still toggle off.
       if (atCap && !selected) row.setAttribute('aria-disabled', 'true');
 
-      row.append(cell('span', '', 'option-box'), cell('span', variable.label));
+      const text = document.createElement('span');
+      text.className = 'option-text';
+      text.append(cell('span', field.label));
+      // Say what comes with it, since one pick can yield three histograms.
+      if (field.aggregations.length > 1) {
+        text.append(cell('span', field.aggregations.map((a) => a.agg).join(' · '), 'option-aggs'));
+      }
+
+      row.append(cell('span', '', 'option-box'), text);
       row.addEventListener('mousedown', (event) => {
         event.preventDefault(); // keep focus in the search box
-        toggleVariable(variable.id);
+        toggleField(field.hourly);
       });
       dom.variableOptions.append(row);
       shown += 1;
@@ -700,19 +726,20 @@ function moveActiveOption(delta) {
   setActiveOption(current + delta);
 }
 
-function toggleVariable(id) {
-  const selected = state.variableIds.includes(id);
+function toggleField(id) {
+  const selected = state.fieldIds.includes(id);
   if (selected) {
-    state.variableIds = state.variableIds.filter((v) => v !== id);
+    state.fieldIds = state.fieldIds.filter((f) => f !== id);
+    state.activeVariant.delete(id);
   } else {
-    if (state.variableIds.length >= MAX_VARIABLES) return;
-    state.variableIds.push(id);
+    if (state.fieldIds.length >= MAX_FIELDS) return;
+    state.fieldIds.push(id);
   }
 
   renderTokens();
   renderOptions();
-  syncGenerateEnabled();
-  // Panels follow the selection immediately: an added variable needs data, but a
+  updateWindowNote(); // the estimate counts fields
+  // Panels follow the selection immediately: an added field needs data, but a
   // removed one can just go.
   if (selected) renderResult();
 }
@@ -746,7 +773,7 @@ function onVariableSearchKeydown(event) {
       // Space is only a shortcut when it isn't part of what's being typed.
       if (!active || (event.key === ' ' && dom.variableSearch.value.length > 0)) break;
       event.preventDefault();
-      toggleVariable(active.dataset.id);
+      toggleField(active.dataset.id);
       break;
     }
     case 'Escape':
@@ -765,11 +792,28 @@ function onVariableSearchKeydown(event) {
 function initVariablePicker() {
   renderTokens();
 
-  dom.variableToggle.addEventListener('click', () =>
-    dom.variablePanel.hidden ? openVariablePanel() : closeVariablePanel()
-  );
+  const togglePanel = () =>
+    dom.variablePanel.hidden ? openVariablePanel() : closeVariablePanel();
+
+  dom.variableToggle.addEventListener('click', togglePanel);
+  // role="button" does not get Enter/Space activation for free.
+  dom.variableToggle.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    togglePanel();
+  });
   dom.variableSearch.addEventListener('input', renderOptions);
   dom.variableSearch.addEventListener('keydown', onVariableSearchKeydown);
+
+  // Escape must work wherever focus is. Clicking an option keeps focus in the search
+  // box, but clicking a token's remove button moves it, and Escape then had nothing
+  // listening — leaving the panel stuck open over the Generate button.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || dom.variablePanel.hidden) return;
+    event.preventDefault();
+    closeVariablePanel();
+    dom.variableToggle.focus();
+  });
 
   // Clicking anywhere outside the control closes it. Registered in the capture
   // phase on purpose: toggling a row re-renders the list, so in the bubble phase
@@ -784,10 +828,10 @@ function initVariablePicker() {
   );
 }
 
-/** Generate needs at least one variable and one lookback window. */
+/** Generate needs at least one field and one lookback window. */
 function syncGenerateEnabled() {
   dom.generateBtn.disabled =
-    state.variableIds.length === 0 || currentLookbacks().length === 0 || Boolean(state.inFlight);
+    state.fieldIds.length === 0 || currentLookbacks().length === 0 || Boolean(state.inFlight);
 }
 
 // --- rendering ---------------------------------------------------------------
@@ -890,15 +934,11 @@ function fillBinTable(table, edges, decimals, allSeries) {
   );
 }
 
-/** Build one panel for one variable and return the view backing its exports. */
-function buildPanel(dataset, context) {
-  const { variable, windows, unit } = dataset;
+/** Bin one variant's windows onto shared edges and return its series. */
+function seriesFor(windows, binCountValue) {
   const theme = readTheme();
-
-  // Bin edges are shared across this variable's windows, but not across variables —
-  // they're different quantities in different units.
   const pooled = windows.flatMap((w) => w.points.map((p) => p.value));
-  const { edges, decimals } = computeEdges(pooled, dom.bins.value);
+  const { edges, decimals } = computeEdges(pooled, binCountValue);
 
   const series = windows.map((w, i) => {
     const values = w.points.map((p) => p.value);
@@ -913,45 +953,106 @@ function buildPanel(dataset, context) {
     };
   });
 
+  return { edges, decimals, series };
+}
+
+/**
+ * Build one panel for one field. Every aggregation of the field is already in hand —
+ * they came from the same response — so the toggle switches between them without any
+ * further work, and the CSV carries all of them.
+ */
+function buildPanel(dataset, context) {
+  const { field, unit } = dataset;
+  const usable = dataset.variants.filter((v) => v.windows.some((w) => w.points.length > 0));
+  if (usable.length === 0) return null;
+
   const panel = dom.resultTemplate.content.firstElementChild.cloneNode(true);
-  const title = `${variable.label} · ${formatMDLabel(context.startMD)} – ${formatMDLabel(context.endMD)}`;
-  const subtitle = [
-    formatPlace(context.place),
-    series.map((s) => `${s.label} (${s.yearSpan})`).join(' · '),
-    context.model.id,
-    dataset.fetchedYears === 0
-      ? 'all years from cache'
-      : `${dataset.fetchedYears} year(s) fetched, ${dataset.cachedYears} from cache`,
-  ].join(' · ');
-
-  panel.querySelector('.results-title').textContent = title;
-  panel.querySelector('.results-subtitle').textContent = subtitle;
-  panel.querySelector('.stats-slot').append(
-    series.length === 1
-      ? buildStatTiles(series[0], variable, unit)
-      : buildStatTable(series, variable, unit)
-  );
-  fillBinTable(panel.querySelector('.bin-table'), edges, decimals, series);
-
   const canvas = panel.querySelector('canvas');
-  const summary = series
-    .map((s) => `${s.label}: ${s.stats.n} days, mean ${formatNumber(s.stats.mean, variable.decimals)}`)
-    .join('; ');
-  canvas.setAttribute(
-    'aria-label',
-    `Histogram of ${variable.label} in ${unit} for ` +
-      `${formatMDLabel(context.startMD)} to ${formatMDLabel(context.endMD)}. ${summary}.`
+  const toggle = panel.querySelector('.variant-toggle');
+
+  // Remember the choice per field so re-rendering (bin change, theme flip) keeps it.
+  const remembered = state.activeVariant.get(field.hourly);
+  let active = usable.find((v) => v.variable.id === remembered) || usable[0];
+
+  const binned = new Map(
+    usable.map((v) => [v.variable.id, seriesFor(v.windows, dom.bins.value)])
   );
 
-  const view = { edges, decimals, series, variable, unit, canvas, title, subtitle, context };
+  function paint() {
+    const { edges, decimals, series } = binned.get(active.variable.id);
+    const variable = active.variable;
+
+    panel.querySelector('.results-title').textContent =
+      `${variable.label} · ${formatMDLabel(context.startMD)} – ${formatMDLabel(context.endMD)}`;
+    panel.querySelector('.results-subtitle').textContent = [
+      formatPlace(context.place),
+      series.map((sr) => `${sr.label} (${sr.yearSpan})`).join(' · '),
+      context.model.id,
+      dataset.fetchedYears === 0
+        ? 'all years from cache'
+        : `${dataset.fetchedYears} year(s) fetched, ${dataset.cachedYears} from cache`,
+    ].join(' · ');
+
+    panel.querySelector('.stats-slot').replaceChildren(
+      series.length === 1
+        ? buildStatTiles(series[0], variable, unit)
+        : buildStatTable(series, variable, unit)
+    );
+    fillBinTable(panel.querySelector('.bin-table'), edges, decimals, series);
+
+    const summary = series
+      .map((sr) => `${sr.label}: ${sr.stats.n} days, mean ${formatNumber(sr.stats.mean, variable.decimals)}`)
+      .join('; ');
+    canvas.setAttribute(
+      'aria-label',
+      `Histogram of ${variable.label} in ${unit} for ` +
+        `${formatMDLabel(context.startMD)} to ${formatMDLabel(context.endMD)}. ${summary}.`
+    );
+
+    for (const button of toggle.querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String(button.dataset.id === active.variable.id));
+    }
+
+    renderHistogram(canvas, {
+      edges,
+      decimals,
+      series,
+      unit,
+      title: variable.short,
+      valueDecimals: variable.decimals,
+    });
+  }
+
+  // One button per aggregation, only when there's a choice to make.
+  if (usable.length > 1) {
+    toggle.hidden = false;
+    toggle.setAttribute('aria-label', `${field.label} aggregation`);
+    for (const variant of usable) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.id = variant.variable.id;
+      // "Max" / "Min" / "Mean" — the field name is already in the title.
+      button.textContent = variant.variable.agg === 'sum' ? 'Total' :
+        variant.variable.agg[0].toUpperCase() + variant.variable.agg.slice(1);
+      button.title = variant.variable.label;
+      button.addEventListener('click', () => {
+        active = variant;
+        state.activeVariant.set(field.hourly, variant.variable.id);
+        paint();
+      });
+      toggle.append(button);
+    }
+  }
 
   for (const button of panel.querySelectorAll('[data-export]')) {
     button.addEventListener('click', () =>
-      button.dataset.export === 'png' ? exportPNG(view) : exportCSV(view)
+      button.dataset.export === 'png'
+        ? exportPNG({ canvas, active, unit, context, field })
+        : exportCSV({ usable, binned, unit, context, field })
     );
   }
 
-  return { panel, view, canvas, edges, decimals, series, unit, variable };
+  return { panel, paint };
 }
 
 /** Re-derive every panel from `state.result` — no network involved. */
@@ -961,81 +1062,89 @@ function renderResult() {
   dom.resultsList.replaceChildren();
   if (!result) return;
 
-  // Show only the variables still selected, in the order they were chosen.
-  const datasets = state.variableIds
-    .map((id) => result.datasets.find((d) => d.variable.id === id))
-    .filter((d) => d && d.windows.some((w) => w.points.length > 0));
+  // Show only the fields still selected, in the order they were chosen.
+  const datasets = state.fieldIds
+    .map((id) => result.datasets.find((d) => d.field.hourly === id))
+    .filter(Boolean);
 
+  const painters = [];
   for (const dataset of datasets) {
     const built = buildPanel(dataset, result);
+    if (!built) continue;
     dom.resultsList.append(built.panel);
-    // Chart.js measures the canvas, so it has to be in the document first.
-    renderHistogram(built.canvas, {
-      edges: built.edges,
-      decimals: built.decimals,
-      series: built.series,
-      unit: built.unit,
-      title: built.variable.short,
-      valueDecimals: built.variable.decimals,
-    });
+    painters.push(built.paint);
   }
+  // Chart.js measures the canvas, so paint only once each panel is in the document.
+  for (const paint of painters) paint();
 }
 
 // --- exports -----------------------------------------------------------------
 
-function exportBaseName(view) {
+function exportBaseName({ context, variable, field, series }) {
   return [
     'weatherhist',
-    slug(view.variable.short),
-    `${view.context.startMD}_${view.context.endMD}`,
-    view.series.map((s) => `${s.lookback}y`).join('-'),
+    slug(variable ? variable.short : field.short),
+    `${context.startMD}_${context.endMD}`,
+    series.map((sr) => `${sr.lookback}y`).join('-'),
   ].join('_');
 }
 
-function exportPNG(view) {
-  const chart = getChart(view.canvas);
+function exportPNG({ canvas, active, unit, context, field }) {
+  const chart = getChart(canvas);
   if (!chart) return;
 
+  const panel = canvas.closest('.results');
+  const series = active.windows.map((w) => ({ lookback: w.lookback }));
   downloadChartPNG(chart, {
-    title: view.title,
-    subtitle: view.subtitle,
-    footer: sourceLine(view.context.model),
+    title: panel.querySelector('.results-title').textContent,
+    subtitle: panel.querySelector('.results-subtitle').textContent,
+    footer: sourceLine(context.model),
     theme: readTheme(),
-    filename: `${exportBaseName(view)}.png`,
+    filename: `${exportBaseName({ context, variable: active.variable, field, series })}.png`,
   });
 }
 
-function exportCSV(view) {
-  const { edges, decimals, series, variable, unit, context } = view;
+/**
+ * One CSV per field, carrying every aggregation that came back with it. Long format
+ * — an `aggregation` column rather than a block per aggregation — because each
+ * aggregation bins onto its own edges, and one flat table imports cleanly.
+ */
+function exportCSV({ usable, binned, unit, context, field }) {
+  const lookbacks = usable[0].windows.map((w) => w.lookback);
 
-  const header = ['bin_start', 'bin_end'];
-  for (const s of series) header.push(`${s.lookback}y_days`, `${s.lookback}y_share_pct`);
-
+  const header = ['aggregation', 'bin_start', 'bin_end'];
+  for (const lookback of lookbacks) header.push(`${lookback}y_days`, `${lookback}y_share_pct`);
   const rows = [header];
-  for (let i = 0; i < edges.length - 1; i++) {
-    const row = [edges[i].toFixed(decimals), edges[i + 1].toFixed(decimals)];
-    for (const s of series) {
-      const count = s.counts[i];
-      row.push(count, s.stats.n ? ((count / s.stats.n) * 100).toFixed(1) : '0.0');
+
+  for (const variant of usable) {
+    const { edges, decimals, series } = binned.get(variant.variable.id);
+    for (let i = 0; i < edges.length - 1; i++) {
+      const row = [variant.variable.agg, edges[i].toFixed(decimals), edges[i + 1].toFixed(decimals)];
+      for (const sr of series) {
+        const count = sr.counts[i];
+        row.push(count, sr.stats.n ? ((count / sr.stats.n) * 100).toFixed(1) : '0.0');
+      }
+      rows.push(row);
     }
-    rows.push(row);
   }
 
   // Provenance below the data, so the header row stays first for spreadsheet imports.
+  const series = binned.get(usable[0].variable.id).series;
   rows.push(
     [],
-    ['variable', `${variable.label} (${unit})`],
-    ['aggregation', `daily ${variable.agg}`],
+    ['field', `${field.label} (${unit})`],
+    ['hourly_variable', field.hourly],
+    ['aggregations', usable.map((v) => v.variable.agg).join(' ')],
     ['location', formatPlace(context.place)],
     ['latitude', context.place.latitude],
     ['longitude', context.place.longitude],
     ['date_window', `${context.startMD} to ${context.endMD}`],
     ['reanalysis_model', context.model.id],
-    ...series.map((s) => [`${s.lookback}y_years`, `${s.yearSpan} (n=${s.stats.n} days)`]),
+    ...series.map((sr) => [`${sr.lookback}y_years`, `${sr.yearSpan} (n=${sr.stats.n} days)`]),
     ['source', sourceLine(context.model)]
   );
 
-  downloadCSV(rows, `${exportBaseName(view)}.csv`);
+  downloadCSV(rows, `${exportBaseName({ context, field, series })}.csv`);
 }
 
 // --- generate ----------------------------------------------------------------
@@ -1054,7 +1163,7 @@ async function handleGenerate(event) {
     setStatus('Pick at least one lookback window.', 'error');
     return;
   }
-  if (state.variableIds.length === 0) {
+  if (state.fieldIds.length === 0) {
     setStatus('Pick at least one variable.', 'error');
     return;
   }
@@ -1073,7 +1182,7 @@ async function handleGenerate(event) {
     const result = await fetchWindows({
       latitude: state.place.latitude,
       longitude: state.place.longitude,
-      variableIds: state.variableIds,
+      fieldIds: state.fieldIds,
       startMD,
       endMD,
       lookbacks,
@@ -1084,7 +1193,9 @@ async function handleGenerate(event) {
 
     if (controller.signal.aborted) return;
 
-    const usable = result.datasets.filter((d) => d.windows.some((w) => w.points.length > 0));
+    const usable = result.datasets.filter((d) =>
+      d.variants.some((v) => v.windows.some((w) => w.points.length > 0))
+    );
     if (usable.length === 0) {
       state.result = null;
       renderResult();
@@ -1098,22 +1209,24 @@ async function handleGenerate(event) {
     const notes = [];
     const empty = result.datasets.filter((d) => !usable.includes(d));
     if (empty.length) {
-      notes.push(`No data for ${empty.map((d) => d.variable.label).join(', ')} at this location.`);
+      notes.push(`No data for ${empty.map((d) => d.field.label).join(', ')} at this location.`);
     }
     for (const dataset of usable) {
-      for (const w of dataset.windows) {
-        if (w.truncated) notes.push(`Only ${w.years.length} of ${w.lookback} years are in the archive.`);
-        if (w.points.length === 0) {
-          // Distinct from a partial gap: nothing at all came back for this window,
-          // so "incomplete" below would understate it.
-          notes.push(`${dataset.variable.short} ${w.lookback}y: no usable data in this window.`);
-          continue;
-        }
-        // expectedDays is summed per year by the fetch layer, so a non-leap year
-        // never looks like it is missing Feb 29.
-        const missing = w.expectedDays - w.points.length;
-        if (missing > 0) {
-          notes.push(`${dataset.variable.short} ${w.lookback}y: ${missing} day(s) had incomplete hourly data.`);
+      for (const variant of dataset.variants) {
+        for (const w of variant.windows) {
+          if (w.truncated) notes.push(`Only ${w.years.length} of ${w.lookback} years are in the archive.`);
+          if (w.points.length === 0) {
+            // Distinct from a partial gap: nothing at all came back for this window,
+            // so "incomplete" below would understate it.
+            notes.push(`${variant.variable.short} ${w.lookback}y: no usable data in this window.`);
+            continue;
+          }
+          // expectedDays is summed per year by the fetch layer, so a non-leap year
+          // never looks like it is missing Feb 29.
+          const missing = w.expectedDays - w.points.length;
+          if (missing > 0) {
+            notes.push(`${variant.variable.short} ${w.lookback}y: ${missing} day(s) had incomplete hourly data.`);
+          }
         }
       }
     }
