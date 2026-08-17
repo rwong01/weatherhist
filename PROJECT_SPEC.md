@@ -1,4 +1,4 @@
-# WxLookback: Historical Weather Distribution Tool
+# WeatherHist: Historical Weather Distribution Tool
 
 ## Overview
 

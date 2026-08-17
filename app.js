@@ -1,4 +1,4 @@
-// WxLookback — wires the DOM controls to geocoding, the archive fetch, and the chart.
+// WeatherHist — wires the DOM controls to geocoding, the archive fetch, and the chart.
 
 import { geocode, formatPlace, GeocodeError } from './lib/geocode.js';
 import {
