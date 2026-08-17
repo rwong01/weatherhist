@@ -6,9 +6,11 @@ the calendar across the past 10, 20, or 30 years at any location.
 > "Show me the distribution of max daily wind gust for June 15–30 over the past
 > 10 years at this address."
 
-Pick a place, a month/day range, a lookback window, and a variable; the app pulls
-hourly ERA5 reanalysis from [Open-Meteo](https://open-meteo.com/), reduces it to one
-value per day, and plots the histogram with mean/median/min/max/σ and percentiles.
+Pick a place, a month/day range, one to three lookback windows, and a variable; the
+app pulls hourly ECMWF reanalysis from [Open-Meteo](https://open-meteo.com/), reduces
+it to one value per day, and plots the histogram with mean/median/min/max/σ and
+percentiles. See [Data source](#data-source) for which reanalysis, and why it's a
+choice rather than a constant.
 
 ## Running locally
 
