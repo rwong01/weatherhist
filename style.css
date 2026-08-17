@@ -21,6 +21,14 @@
   --grid: rgba(11, 11, 11, 0.09);
   --danger: #b0201f;
 
+  /*
+   * Chart tooltip. Deliberately inverted against the page so it reads as an overlay,
+   * which means it needs its OWN text token — deriving the background from
+   * --text-primary made it white-on-white the moment the theme flipped.
+   */
+  --tooltip-bg: #1a1a19;
+  --tooltip-text: #ffffff;
+
   --radius: 10px;
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.05), 0 6px 20px rgba(11, 11, 11, 0.05);
 }
@@ -57,6 +65,10 @@
     --grid: rgba(255, 255, 255, 0.1);
     --danger: #e66767;
 
+    /* Inverted the other way: a light panel over the dark surface. */
+    --tooltip-bg: #f4f3f0;
+    --tooltip-text: #0b0b0b;
+
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
   }
 }
@@ -81,6 +93,10 @@
   --series-1-soft: #1d2b3d;
   --grid: rgba(255, 255, 255, 0.1);
   --danger: #e66767;
+
+  /* Inverted the other way: a light panel over the dark surface. */
+  --tooltip-bg: #f4f3f0;
+  --tooltip-text: #0b0b0b;
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
 }

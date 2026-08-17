@@ -126,6 +126,10 @@ The three lookback windows are nested and share an end year, so:
   incomparable. A single window still plots as a plain count of days.
 - Series colours are categorical slots 1-3, validated for colourblind separation
   against both the light and dark surfaces.
+- The hover tooltip is inverted against the page — a dark panel on light, a light
+  panel on dark — and carries its own `--tooltip-bg` / `--tooltip-text` pair rather
+  than borrowing a text token, so its background and its glyph colour can never end
+  up the same value. Measured from the rendered canvas: 17.4:1 light, 17.7:1 dark.
 
 ### Edge cases
 
