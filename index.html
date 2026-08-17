@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WxLookback — Historical Weather Distributions</title>
+    <meta
+      name="description"
+      content="See how a weather variable was distributed over a slice of the calendar across the past 10, 20, or 30 years at any location."
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📊</text></svg>"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script type="module" src="app.js"></script>
+  </head>
+
+  <body>
+    <header class="page-header">
+      <h1>WxLookback</h1>
+      <p class="tagline">
+        How was the weather, historically? Pick a place, a slice of the calendar, and a
+        variable — see the distribution across every year in the window.
+      </p>
+    </header>
+
+    <main>
+      <form id="controls" class="panel" novalidate>
+        <!-- 1. Location -->
+        <section class="field-group">
+          <h2 class="field-group-title">1 · Location</h2>
+          <div class="row">
+            <label class="grow">
+              <span class="label-text">Address, city, ZIP, or lat, long</span>
+              <input
+                id="location-input"
+                type="text"
+                autocomplete="off"
+                placeholder="e.g. Bend, OR — or 44.058, -121.315"
+              />
+            </label>
+            <button id="search-btn" type="button" class="secondary">Search</button>
+          </div>
+
+          <ul id="geo-results" class="geo-results" hidden></ul>
+          <p id="selected-place" class="selected-place" hidden></p>
+        </section>
+
+        <!-- 2. Date window -->
+        <section class="field-group">
+          <h2 class="field-group-title">2 · Date range</h2>
+          <div class="row date-row">
+            <label>
+              <span class="label-text">From</span>
+              <span class="date-pair">
+                <select id="start-month" aria-label="Start month"></select>
+                <select id="start-day" aria-label="Start day"></select>
+              </span>
+            </label>
+            <label>
+              <span class="label-text">To</span>
+              <span class="date-pair">
+                <select id="end-month" aria-label="End month"></select>
+                <select id="end-day" aria-label="End day"></select>
+              </span>
+            </label>
+          </div>
+          <p id="window-note" class="hint"></p>
+        </section>
+
+        <!-- 3. Lookback -->
+        <section class="field-group">
+          <h2 class="field-group-title">3 · Lookback window</h2>
+          <div class="radio-row" role="radiogroup" aria-label="Lookback window">
+            <label class="chip">
+              <input type="radio" name="lookback" value="10" checked />
+              <span>10 years</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="lookback" value="20" />
+              <span>20 years</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="lookback" value="30" />
+              <span>30 years</span>
+            </label>
+          </div>
+        </section>
+
+        <!-- 4. Variable -->
+        <section class="field-group">
+          <h2 class="field-group-title">4 · Weather variable</h2>
+          <div class="row">
+            <label class="grow">
+              <span class="label-text">Variable</span>
+              <select id="variable"></select>
+            </label>
+            <label>
+              <span class="label-text">Bins</span>
+              <select id="bins">
+                <option value="auto" selected>Auto</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="generate-btn" type="submit" class="primary">Generate histogram</button>
+          <button id="clear-cache-btn" type="button" class="ghost">Clear cache</button>
+          <span id="cache-note" class="hint"></span>
+        </div>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite" hidden></p>
+
+      <section id="results" class="panel results" hidden>
+        <h2 id="results-title" class="results-title"></h2>
+        <p id="results-subtitle" class="results-subtitle"></p>
+
+        <dl id="stats" class="stats"></dl>
+
+        <div class="chart-wrap">
+          <canvas id="histogram" role="img" aria-label="Histogram of the selected weather variable"></canvas>
+        </div>
+
+        <details class="table-details">
+          <summary>Show data table</summary>
+          <div class="table-scroll">
+            <table id="bin-table">
+              <caption class="visually-hidden">Histogram bin counts</caption>
+              <thead>
+                <tr><th scope="col">Range</th><th scope="col">Days</th><th scope="col">Share</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p>
+        Weather data by <a href="https://open-meteo.com/" rel="noopener">Open-Meteo.com</a>
+        (<a href="https://creativecommons.org/licenses/by/4.0/" rel="noopener">CC BY 4.0</a>).
+        Personal, non-commercial use.
+      </p>
+    </footer>
+  </body>
+</html>
