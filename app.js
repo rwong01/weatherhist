@@ -285,7 +285,8 @@ function renderResult() {
     bins,
     stats,
     unit: variable.unit,
-    title: variable.label,
+    title: variable.short,
+    valueDecimals: variable.decimals,
   });
 
   dom.canvas.setAttribute(
