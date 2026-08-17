@@ -1,0 +1,16 @@
+{
+  "name": "WeatherHist — Historical Weather Distributions",
+  "short_name": "WeatherHist",
+  "description": "See how a weather variable was distributed over a slice of the calendar across the past 10, 20, or 30 years at any location.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f3f0",
+  "theme_color": "#f4f3f0",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📊</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

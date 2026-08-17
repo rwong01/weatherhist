@@ -595,6 +595,17 @@ button:disabled {
   color: var(--danger);
 }
 
+.noscript-banner {
+  margin: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  color: var(--danger);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 .hint {
   margin: 0.5rem 0 0;
   font-size: 0.8125rem;
@@ -904,6 +915,12 @@ button:disabled {
   letter-spacing: 0;
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* A window with zero usable days reads as one explanatory cell, not a row of dashes. */
+.stats-empty {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .stats {

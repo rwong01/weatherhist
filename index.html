@@ -8,16 +8,59 @@
       name="description"
       content="See how a weather variable was distributed over a slice of the calendar across the past 10, 20, or 30 years at any location."
     />
+
+    <!-- Link-preview cards (Slack, Twitter/X, iMessage, ...); no dedicated image, so
+         these fall back to a title-and-text card rather than a broken image. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="WeatherHist — Historical Weather Distributions" />
+    <meta
+      property="og:description"
+      content="See how a weather variable was distributed over a slice of the calendar across the past 10, 20, or 30 years at any location."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="WeatherHist — Historical Weather Distributions" />
+    <meta
+      name="twitter:description"
+      content="See how a weather variable was distributed over a slice of the calendar across the past 10, 20, or 30 years at any location."
+    />
+
+    <!-- Matches the mobile browser chrome (address bar) to the page background;
+         app.js keeps this in sync with the Light/Auto/Dark control. -->
+    <meta id="theme-color-meta" name="theme-color" content="#f4f3f0" />
+
     <link rel="stylesheet" href="style.css" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📊</text></svg>"
     />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <link
+      rel="apple-touch-icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📊</text></svg>"
+    />
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <!--
+      No integrity hash pinned: computing one correctly requires fetching the exact
+      served bytes, which this environment's network policy blocked. `crossorigin`
+      is left on so one can be added later (`openssl dgst -sha384 -binary | openssl
+      base64 -A` on the fetched file) without also needing this attribute then.
+    -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+      crossorigin="anonymous"
+      defer
+    ></script>
     <script type="module" src="app.js"></script>
   </head>
 
   <body>
+    <noscript>
+      <p class="noscript-banner">
+        WeatherHist needs JavaScript to look up locations and fetch weather data.
+        Please enable it and reload the page.
+      </p>
+    </noscript>
+
     <header class="page-header">
       <div class="header-top">
         <h1>WeatherHist</h1>
@@ -72,6 +115,9 @@
                 />
               </label>
               <span id="geo-spinner" class="field-spinner" hidden aria-hidden="true"></span>
+              <!-- The spinner above is aria-hidden; this is the actual announcement of
+                   "searching" / result count for screen readers. -->
+              <span id="geo-live" class="visually-hidden" aria-live="polite"></span>
               <!-- Confirms the field holds a resolved place, rather than repeating it. -->
               <span id="geo-ok" class="field-ok" hidden>
                 <svg viewBox="0 0 24 24" aria-hidden="true">

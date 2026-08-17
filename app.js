@@ -64,6 +64,7 @@ const dom = {
   geoResults: el('geo-results'),
   geoSpinner: el('geo-spinner'),
   geoOk: el('geo-ok'),
+  geoLive: el('geo-live'),
   preset: el('preset'),
   startMonth: el('start-month'),
   startDay: el('start-day'),
@@ -168,6 +169,19 @@ function applyTheme(choice) {
   } else {
     delete document.documentElement.dataset.theme;
   }
+  syncThemeColorMeta();
+}
+
+/**
+ * Keep the browser-chrome colour (the address bar on mobile) matched to the page
+ * background rather than hard-coding it a second time here, so a future palette
+ * tweak in one place can't leave the other stale.
+ */
+function syncThemeColorMeta() {
+  const meta = el('theme-color-meta');
+  if (!meta) return;
+  const color = getComputedStyle(document.documentElement).getPropertyValue('--surface-0').trim();
+  if (color) meta.setAttribute('content', color);
 }
 
 function initTheme() {
@@ -374,6 +388,7 @@ function closeSuggestions() {
   state.activeIndex = -1;
   dom.geoResults.hidden = true;
   dom.geoResults.replaceChildren();
+  dom.geoLive.textContent = '';
   dom.locationInput.setAttribute('aria-expanded', 'false');
   dom.locationInput.removeAttribute('aria-activedescendant');
 }
@@ -435,6 +450,12 @@ function openSuggestions(places, heading) {
 
   dom.geoResults.hidden = false;
   dom.locationInput.setAttribute('aria-expanded', 'true');
+
+  // The spinner is aria-hidden, so this is the only cue a screen reader gets that
+  // typing (or focusing the field) produced a list.
+  const count = `${places.length} location${places.length === 1 ? '' : 's'}`;
+  dom.geoLive.textContent =
+    places.length === 0 ? 'No matching places' : heading ? `${heading}: ${count}` : `${count} found`;
 }
 
 /** Fetch suggestions for `query`, superseding any request already in flight. */
@@ -449,6 +470,7 @@ async function loadSuggestions(query) {
   const controller = new AbortController();
   state.suggestController = controller;
   dom.geoSpinner.hidden = false;
+  dom.geoLive.textContent = 'Searching for locations…';
 
   try {
     const places = await geocode(query, { count: 6, signal: controller.signal });
@@ -817,9 +839,18 @@ function buildStatTable(allSeries, variable, unit) {
     th.append(swatch(series.color), document.createTextNode(`${series.label} (${series.yearSpan})`));
     tr.append(th);
 
-    for (const [, get, isCount] of STAT_COLUMNS) {
-      const value = get(series.stats);
-      tr.append(cell('td', isCount ? String(value) : formatNumber(value, variable.decimals)));
+    // A window can be fully empty (e.g. it reaches back further than this
+    // variable's coverage at this location) while its siblings still have data —
+    // say so once instead of a row of unexplained dashes.
+    if (series.stats.n === 0) {
+      const td = cell('td', 'No data for this window', 'stats-empty');
+      td.colSpan = STAT_COLUMNS.length;
+      tr.append(td);
+    } else {
+      for (const [, get, isCount] of STAT_COLUMNS) {
+        const value = get(series.stats);
+        tr.append(cell('td', isCount ? String(value) : formatNumber(value, variable.decimals)));
+      }
     }
     tbody.append(tr);
   }
@@ -1072,6 +1103,12 @@ async function handleGenerate(event) {
     for (const dataset of usable) {
       for (const w of dataset.windows) {
         if (w.truncated) notes.push(`Only ${w.years.length} of ${w.lookback} years are in the archive.`);
+        if (w.points.length === 0) {
+          // Distinct from a partial gap: nothing at all came back for this window,
+          // so "incomplete" below would understate it.
+          notes.push(`${dataset.variable.short} ${w.lookback}y: no usable data in this window.`);
+          continue;
+        }
         // expectedDays is summed per year by the fetch layer, so a non-leap year
         // never looks like it is missing Feb 29.
         const missing = w.expectedDays - w.points.length;
@@ -1162,6 +1199,7 @@ function init() {
 
   // Under "auto" the OS can flip out from under us; chart colours must follow.
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    syncThemeColorMeta();
     updateChipColors();
     if (state.result) renderResult();
   });
