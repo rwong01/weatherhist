@@ -57,20 +57,38 @@ Params:
 - `wind_speed_unit=mph`, `temperature_unit=fahrenheit`, `precipitation_unit=inch` —
   a units toggle can come later; US units are the v1 default since the initial use
   case is US-based.
+- `models=era5_seamless` — see Data source below. Not specifying this would take
+  Open-Meteo's `best_match` default, which blends in IFS HRES from 2017 onward and
+  makes a long lookback window inhomogeneous.
+
+### Data source
+
+All data is ECMWF **ERA5 reanalysis** via Open-Meteo. Pinning `era5_seamless` keeps
+one reanalysis family across the whole window: temperature, humidity and soil from
+ERA5-Land (~11 km, 1950-), wind, precipitation and radiation from ERA5 (~25 km,
+1940-). The alternative `era5` gives uniform ~25 km ERA5 for every variable.
+
+This matters most for the overlay feature: comparing a 10-year window against a
+30-year one is only meaningful if both are measured the same way.
 
 ### Variables supported in v1
 
-| Option                  | Hourly variable        | Aggregation | Unit |
-| ----------------------- | ---------------------- | ----------- | ---- |
-| Max wind speed          | `wind_speed_10m`       | daily max   | mph  |
-| Max wind gust           | `wind_gusts_10m`       | daily max   | mph  |
-| Max temperature         | `temperature_2m`       | daily max   | °F   |
-| Min temperature         | `temperature_2m`       | daily min   | °F   |
-| Total precipitation     | `precipitation`        | daily sum   | in   |
-| Mean relative humidity  | `relative_humidity_2m` | daily mean  | %    |
+41 options across 7 groups (temperature & humidity, wind, precipitation, pressure &
+cloud, solar radiation, soil, evapotranspiration) — every continuous hourly variable
+the archive serves for the full 30-year lookback. Each pairs an hourly variable with
+a suitable daily aggregation and is grouped into `<optgroup>`s in the dropdown. The
+authoritative list lives in `VARIABLES` in `lib/weather.js`.
 
-(The spec originally listed the legacy `windspeed_10m` / `windgusts_10m` names.
-Open-Meteo still accepts those, but the current names are used here.)
+Deliberately excluded, because a histogram of them would mislead:
+
+- `wind_direction_10m` / `_100m` — circular degrees; the mean of 350° and 10° is
+  180°, the opposite direction. Direction needs a wind rose (see non-goals).
+- `weather_code` — a categorical WMO code; its numeric spacing is meaningless.
+- `global_tilted_irradiance` — requires panel tilt/azimuth parameters.
+- ensemble spread variables — require `models=era5_ensemble`.
+
+Display units come from each response's `hourly_units` rather than a hard-coded
+table, so changing the unit request parameters can't mislabel an axis.
 
 ## Aggregation
 
@@ -84,6 +102,20 @@ before binning:
 
 This produces one data point per day per year. The histogram bins these values
 across all years in the lookback window.
+
+### Overlaying windows
+
+The three lookback windows are nested and share an end year, so:
+
+- The union of years needed is exactly the largest selected window. It is fetched
+  once and the smaller windows are sliced out of it, rather than issuing overlapping
+  requests per window.
+- Overlaid series share one set of bin edges, computed over their pooled values.
+- Overlaid series are plotted as **% of days**, not raw counts — the 30-year window
+  contains the 10-year one, so counts would make it taller everywhere and the shapes
+  incomparable. A single window still plots as a plain count of days.
+- Series colours are categorical slots 1-3, validated for colourblind separation
+  against both the light and dark surfaces.
 
 ### Edge cases
 
@@ -100,7 +132,11 @@ across all years in the lookback window.
 - Cache every fetched result in `localStorage`, keyed by
   `{lat},{long}|{variable}|{startMonthDay}-{endMonthDay}|{year}`.
   Keys are **per year** rather than per lookback window so that going from 10 to 30
-  years only fetches the 20 years that aren't already cached.
+  years only fetches the 20 years that aren't already cached, and so overlaid windows
+  share the years they have in common.
+  Each entry stores `{ u: unit, d: [[date, value], ...] }`. The prefix carries a
+  schema version (`weatherhist:v2:`), bumped when the stored shape or the pinned
+  model changes.
 - Before fetching, check cache first. On cache hit, skip the API call entirely.
 - Store the raw per-day aggregated values (not just the chart), so switching bin
   size or chart style later doesn't require a re-fetch.
@@ -123,7 +159,8 @@ across all years in the lookback window.
 │   ├── geocode.js   # geocoding API wrapper
 │   ├── weather.js   # archive API wrapper + aggregation logic
 │   ├── cache.js     # localStorage cache helpers
-│   └── chart.js     # histogram rendering with Chart.js
+│   ├── chart.js     # histogram rendering with Chart.js
+│   └── export.js    # PNG + CSV download helpers
 └── PROJECT_SPEC.md  # this file
 ```
 
@@ -136,13 +173,23 @@ plain DOM updates are fine given the app's scope.
 - Location input with a "search" button, showing a disambiguation list if geocoding
   returns multiple matches.
 - Date range picker constrained to month/day (year is irrelevant to the picker).
-- Lookback window: radio group for 10 / 20 / 30 years.
+- Lookback window: **checkboxes** for 10 / 20 / 30 years — any combination can be
+  ticked to overlay up to three windows on one chart. Each shows the concrete years
+  it covers as subtext, recomputed when the date range changes.
+- Date range quick-select for "Full year (Jan 1 - Dec 31)"; hand-editing the
+  month/day pickers drops the preset back to "Custom".
 - Variable dropdown.
 - "Generate" button that triggers the fetch/cache/render flow.
 - Loading state with per-year progress while fetching (30 years of data takes a few
   seconds on first load).
-- Histogram with axis labels, mean line, and a stats summary (n, mean, median, min,
-  max, std dev) above the chart.
+- Histogram with axis labels, a mean line per window, and a stats summary (n, mean,
+  median, min, max, std dev, 10th/90th percentile) above the chart — a tile grid for
+  a single window, a comparison table with colour swatches when several are overlaid.
+- Export buttons: chart to PNG (composited onto an opaque background with title and
+  attribution) and the data table to CSV (a days/share column pair per window plus a
+  provenance block).
+- A GitHub link in the bottom-left corner and a Buy Me a Coffee widget in the
+  bottom-right, the latter rendered closed (`data-message=""`).
 - Mobile-responsive, desktop-first.
 
 ## Explicit Non-Goals for v1
