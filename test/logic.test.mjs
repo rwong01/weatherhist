@@ -243,6 +243,52 @@ test('an unknown variable id falls back rather than throwing', () => {
   assert.strictEqual(weather.getVariable('temp_max').id, 'temp_max');
 });
 
+// --- API call cost -----------------------------------------------------------
+
+test('a request within the free variable and day allowances is one call', () => {
+  assert.strictEqual(weather.callWeight(1, 14), 1);
+  assert.strictEqual(weather.callWeight(10, 14), 1);
+  assert.strictEqual(weather.callWeight(3, 7), 1, 'a short window is not cheaper than one call');
+});
+
+test('the weighting matches the published examples', () => {
+  // Open-Meteo: "2 weeks of data with 15 weather variables will be calculated as 1.5
+  // API calls, while 4 weeks of data equals 3.0 API calls".
+  assert.strictEqual(weather.callWeight(15, 14), 1.5);
+  assert.strictEqual(weather.callWeight(15, 28), 3);
+});
+
+test('batching variables is free up to ten, which is why one request per year wins', () => {
+  const oneAtATime = 3 * weather.callWeight(1, 365);
+  const batched = weather.callWeight(3, 365);
+  assert.ok(Math.abs(batched - oneAtATime / 3) < 1e-9, 'three variables cost the same as one');
+});
+
+test('a narrow window over 30 years is far cheaper than one continuous range', () => {
+  const years = Array.from({ length: 30 }, (_, i) => 1996 + i);
+  const perYear = weather.estimateCalls({ years, startMD: '06-15', endMD: '06-30', variableCount: 3 });
+  const merged = weather.callWeight(3, sum(years.map((y) => weather.daysInWindow(y, '06-15', '06-30'))));
+  assert.ok(perYear < 40, `per-year cost ${perYear}`);
+  // Same weight for a full year, but a narrow window would download 23x the data.
+  assert.ok(Math.abs(perYear - merged) < 1e-9, 'weight is proportional to total days');
+});
+
+test('a full-year 30-year query is expensive enough to be worth showing', () => {
+  const years = Array.from({ length: 30 }, (_, i) => 1996 + i);
+  const calls = weather.estimateCalls({ years, startMD: '01-01', endMD: '12-31', variableCount: 3 });
+  assert.ok(calls > 700 && calls < 800, `got ${calls}`);
+});
+
+// --- coordinate snapping -----------------------------------------------------
+
+test('coordinates snap to a grid far finer than the weather model', () => {
+  // ERA5-Land is 0.1 degrees (~11 km), so ~1 km rounding cannot change the cell.
+  assert.strictEqual(weather.snapCoord(44.0583), 44.06);
+  assert.strictEqual(weather.snapCoord(-121.3149), -121.31);
+  assert.strictEqual(weather.snapCoord(44.058), weather.snapCoord(44.061),
+    'points ~300 m apart share one cache entry');
+});
+
 // --- cache keys --------------------------------------------------------------
 
 test('the cache key separates location, variable, window, year and model', () => {
@@ -255,6 +301,83 @@ test('the cache key separates location, variable, window, year and model', () =>
   assert.notStrictEqual(cache.makeKey(base), cache.makeKey({ ...base, model: 'best_match' }));
   // Coordinates round, so two geocodes of one place hit one entry.
   assert.strictEqual(cache.makeKey(base), cache.makeKey({ ...base, latitude: 44.05800001 }));
+});
+
+// --- cache eviction ----------------------------------------------------------
+
+/**
+ * A localStorage stand-in with a byte budget, so the full-store path is exercised
+ * deterministically rather than by trying to fill a real browser's quota.
+ */
+function fakeStorage(budgetBytes) {
+  const map = new Map();
+  const used = () => [...map].reduce((n, [k, v]) => n + k.length + v.length, 0);
+  return {
+    get length() { return map.size; },
+    key(i) { return [...map.keys()][i] ?? null; },
+    getItem(k) { return map.has(k) ? map.get(k) : null; },
+    removeItem(k) { map.delete(k); },
+    setItem(k, v) {
+      const next = used() - (map.has(k) ? k.length + map.get(k).length : 0) + k.length + v.length;
+      if (next > budgetBytes) {
+        const err = new Error('QuotaExceededError');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
+      map.set(k, v);
+    },
+  };
+}
+
+test('a full store evicts the oldest entries instead of failing writes', () => {
+  const original = globalThis.localStorage;
+  // Room for roughly a dozen of these payloads, so eviction has to kick in.
+  globalThis.localStorage = fakeStorage(4000);
+  try {
+    const payload = { u: 'mph', d: Array.from({ length: 20 }, (_, i) => [`2024-06-${i + 1}`, i]) };
+    let written = 0;
+    for (let i = 0; i < 60; i++) {
+      if (cache.set(`key-${i}`, payload)) written += 1;
+    }
+    assert.strictEqual(written, 60, 'every write succeeded — none failed silently');
+
+    const { entries } = cache.stats();
+    assert.ok(entries > 0, 'the cache still holds data');
+    assert.ok(entries < 60, `older entries were evicted (kept ${entries})`);
+
+    // The most recent write survived; the very first did not.
+    assert.ok(cache.get('key-59'), 'newest entry is present');
+    assert.strictEqual(cache.get('key-0'), null, 'oldest entry was evicted');
+  } finally {
+    globalThis.localStorage = original;
+  }
+});
+
+test('clear() reports data entries and leaves nothing of ours behind', () => {
+  const original = globalThis.localStorage;
+  globalThis.localStorage = fakeStorage(1e6);
+  try {
+    cache.set('a', { u: 'x', d: [] });
+    cache.set('b', { u: 'x', d: [] });
+    assert.strictEqual(cache.stats().entries, 2);
+    assert.strictEqual(cache.clear(), 2, 'the bookkeeping index is not counted as data');
+    assert.strictEqual(cache.stats().entries, 0);
+  } finally {
+    globalThis.localStorage = original;
+  }
+});
+
+test('a blocked store degrades to no caching rather than throwing', () => {
+  const original = globalThis.localStorage;
+  globalThis.localStorage = undefined;
+  try {
+    assert.strictEqual(cache.set('k', { u: 'x', d: [] }), false);
+    assert.strictEqual(cache.get('k'), null);
+    assert.strictEqual(cache.clear(), 0);
+    assert.deepStrictEqual(cache.stats(), { entries: 0, bytes: 0 });
+  } finally {
+    globalThis.localStorage = original;
+  }
 });
 
 // --- exports -----------------------------------------------------------------

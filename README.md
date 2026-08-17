@@ -85,6 +85,58 @@ Notes worth knowing:
 - Overlaid windows are fetched as a single union: ticking 10 + 20 + 30 loads 30
   years once, not 60 requests' worth.
 
+## API usage and caching
+
+Open-Meteo's free tier allows 600 calls/minute, 5,000/hour, **10,000/day** and
+300,000/month — and a call is *weighted*, not counted per HTTP request: asking for
+more than 10 variables, or more than 2 weeks of data, costs proportionally more
+(their example: 2 weeks × 15 variables = 1.5 calls, 4 weeks × 15 = 3.0).
+
+Two consequences shape the request strategy:
+
+- **Up to 10 variables ride along in one request for free.** All selected variables
+  are fetched together, one request per year, so three variables cost the same as
+  one. That is an exact 3× saving: a 3-variable 30-year query went from 90 requests /
+  103 weighted calls to 30 requests / 34.
+- **The day factor is proportional, so merging years saves nothing.** One continuous
+  30-year range weighs the same as 30 per-year requests, while downloading ~23× the
+  data for a narrow window. Per-year requests are the cheap shape and stay.
+
+Variables that share an hourly field are only asked for once — max, min and mean
+temperature all read `temperature_2m`.
+
+**What a query costs is shown before you run it**, in the date-range note, because
+the range dominates everything else: Jun 15–30 over 30 years is ~35 calls, but a
+*full year* over 30 years is ~780. The free daily quota is about 12 of the latter.
+
+Cached years cost nothing, and the cache is per (location, variable, window, year,
+model), so re-running a query, widening the lookback, or swapping one variable all
+fetch only what's genuinely missing.
+
+Two things make the cache pull its weight:
+
+- **Coordinates snap to ~1 km** before the request. ERA5-Land's grid is ~11 km and
+  ERA5's is ~25 km, so this cannot change which cell answers — but it means two
+  searches for the same town that differ by a few hundred metres share one entry.
+- **A full `localStorage` evicts oldest-first instead of failing.** Previously writes
+  failed silently once the ~5 MB store filled, so the cache quietly stopped growing
+  and every later query re-fetched — the worst possible behaviour for a quota. A
+  handful of full-year queries is enough to fill it.
+
+### Why there's no server-side cache
+
+The free API needs no key, so usage is attributed by IP (their terms mention
+collecting IPs "to prevent misuse" and reserving the right to block IP addresses).
+Because this app runs entirely in the browser, **every user spends their own quota**.
+A Worker proxy would pool all users onto one shared egress quota — for a few dozen
+people looking at different locations, cache hits between them would be rare, so it
+would trade a per-user 10,000/day for a shared one. That's a regression, not a fix.
+
+A shared cache only starts to pay off if many users query the *same* locations and
+windows. If that becomes true, the cheap version is a Worker in front of the archive
+using the Cache API keyed on the upstream URL, with a long TTL because historical
+data is immutable — no KV needed.
+
 ## Location search
 
 The field remembers the **last five locations used in this browser session** and

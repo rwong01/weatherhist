@@ -147,6 +147,25 @@ The three lookback windows are nested and share an end year, so:
   recent year is only included once its window has fully closed; otherwise the
   window shifts back a year.
 
+## API quota
+
+Free tier: 600/min, 5,000/hour, 10,000/day, 300,000/month, with calls weighted by
+request size (>10 variables or >2 weeks costs proportionally more). Therefore:
+
+- Every selected variable is batched into one request per year — ≤10 variables cost
+  the same as one, so this is an exact 3× saving for a 3-variable query.
+- Years are *not* merged into a continuous range: same weight, far more bytes.
+- Variables sharing an hourly field are requested once.
+- The estimated cold-fetch cost is shown in the date-range note before Generate,
+  since a full-year 30-year query (~780 calls) is two orders of magnitude more
+  expensive than a fortnight (~35).
+- Request coordinates snap to ~1 km, far finer than the model grid, so nearby
+  searches share cache entries.
+
+Usage is attributed per IP and the app is client-side, so each user spends their own
+quota. A Worker proxy would pool everyone onto one — see the README for why that is
+a regression until users start sharing locations.
+
 ## Caching Strategy (v1: client-side only)
 
 - Cache every fetched result in `localStorage`, keyed by
@@ -164,8 +183,10 @@ The three lookback windows are nested and share an end year, so:
   "clear cache" button is provided for testing/debugging.
 - Coordinates are rounded to 4 decimals (~11 m) in the cache key so that two
   geocodes of the same place hit the same entry.
-- If `localStorage` is full or unavailable, writes fail silently and the app keeps
-  working without a cache.
+- If `localStorage` is full, the oldest entries are evicted (insertion order is
+  tracked in a sibling index entry) so writes keep succeeding. Silent write failure
+  was the worst case for quota: the cache stopped growing and every later query
+  re-fetched. If storage is unavailable entirely, the app works without a cache.
 - No Cloudflare Worker or KV caching layer in v1. Everything is client-side.
 
 ## File Structure

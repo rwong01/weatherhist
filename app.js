@@ -14,6 +14,7 @@ import {
   formatMDLabel,
   windowLength,
   windowLengthRange,
+  estimateCalls,
   WeatherError,
 } from './lib/weather.js';
 import * as cache from './lib/cache.js';
@@ -333,10 +334,21 @@ function updateWindowNote() {
   const dayLabel = lengths.length > 1 ? `${lengths[0]}–${lengths[lengths.length - 1]}` : `${lengths[0]}`;
 
   // Only what the controls can't already show: the window's length in days, the
-  // wrap, and how much will be fetched.
+  // wrap, how much will be fetched, and what a cold fetch costs against the API's
+  // quota — a full year over 30 years is ~780 weighted calls, which is worth seeing
+  // before pressing Generate rather than after.
   const parts = [`${dayLabel} days per year`];
   if (endMD < startMD) parts.push('wraps into the next year');
-  if (years.length) parts.push(`${years.length} years to load`);
+  if (years.length) {
+    parts.push(`${years.length} years to load`);
+    const calls = estimateCalls({
+      years,
+      startMD,
+      endMD,
+      variableCount: Math.max(1, state.variableIds.length),
+    });
+    parts.push(`~${Math.ceil(calls)} API calls if not cached`);
+  }
 
   dom.windowNote.textContent = parts.join(' · ');
   syncGenerateEnabled();
