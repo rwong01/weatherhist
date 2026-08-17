@@ -134,22 +134,42 @@
         <!-- 2. Date window -->
         <section class="field-group">
           <h2 class="field-group-title">2 · Date range</h2>
-          <div class="row date-row">
-            <label>
-              <span class="label-text">Quick select</span>
-              <select id="preset">
-                <option value="custom" selected>Custom…</option>
-                <option value="full-year">Full year (Jan 1 – Dec 31)</option>
-              </select>
+
+          <div class="preset-row" role="radiogroup" aria-label="Quick select date range">
+            <label class="preset-chip">
+              <input type="radio" name="preset" value="custom" checked />
+              <span>Custom</span>
             </label>
-            <label>
+            <label class="preset-chip">
+              <input type="radio" name="preset" value="next-7" />
+              <span>Next 7 days</span>
+            </label>
+            <label class="preset-chip">
+              <input type="radio" name="preset" value="next-30" />
+              <span>Next 30 days</span>
+            </label>
+            <label class="preset-chip">
+              <input type="radio" name="preset" value="this-month" />
+              <span>This month</span>
+            </label>
+            <label class="preset-chip">
+              <input type="radio" name="preset" value="full-year" />
+              <span>Full year</span>
+            </label>
+          </div>
+
+          <div class="date-span">
+            <label class="date-field">
               <span class="label-text">From</span>
               <span class="date-pair">
                 <select id="start-month" aria-label="Start month"></select>
                 <select id="start-day" aria-label="Start day"></select>
               </span>
             </label>
-            <label>
+            <svg class="date-arrow" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h16m0 0-5-5m5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <label class="date-field">
               <span class="label-text">To</span>
               <span class="date-pair">
                 <select id="end-month" aria-label="End month"></select>
@@ -157,6 +177,7 @@
               </span>
             </label>
           </div>
+
           <p id="window-note" class="hint"></p>
         </section>
 

@@ -290,14 +290,94 @@ summary:focus-visible {
   outline-offset: 2px;
 }
 
-.date-row label {
-  flex: 1 1 16rem;
+/* --- date range: presets + from/to ------------------------------------------ */
+
+/*
+ * A pill row, not checkbox cards like the lookback chips below: this control picks
+ * exactly one preset, and the shape says so. "Custom" is a real, selectable member
+ * of the row rather than a placeholder — it's simply the one that leaves the pickers
+ * alone, and it's what lights up once a hand edit stops matching any other preset.
+ */
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.preset-chip {
+  position: relative;
+}
+
+.preset-chip input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.preset-chip span {
+  display: block;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  white-space: nowrap;
+}
+
+.preset-chip input:checked + span {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.preset-chip input:focus-visible + span {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+
+.preset-chip input:hover:not(:checked) + span {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+/* From and To read as one connected span, not two unrelated fields. */
+.date-span {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+
+.date-field {
+  flex: 1 1 14rem;
+}
+
+.date-arrow {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-bottom: 0.65rem; /* lines up with the selects, not their labels */
+  color: var(--text-muted);
 }
 
 .date-pair {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 0.5rem;
+}
+
+@media (max-width: 30rem) {
+  .date-span {
+    flex-wrap: wrap;
+  }
+
+  .date-arrow {
+    display: none;
+  }
 }
 
 /* --- buttons --------------------------------------------------------------- */

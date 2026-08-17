@@ -71,7 +71,7 @@ const dom = {
   geoSpinner: el('geo-spinner'),
   geoOk: el('geo-ok'),
   geoLive: el('geo-live'),
-  preset: el('preset'),
+  presetInputs: document.querySelectorAll('input[name="preset"]'),
   startMonth: el('start-month'),
   startDay: el('start-day'),
   endMonth: el('end-month'),
@@ -257,17 +257,69 @@ function initDatePickers() {
   dom.endDay.addEventListener('change', onWindowChanged);
 }
 
+/**
+ * Quick-select presets, keyed by radio value. "custom" has no entry — selecting it
+ * is a no-op that just leaves the pickers as they are, which is also why it's what
+ * lights back up once a hand edit stops matching any of the others (see
+ * `detectPreset`). The day-count ones are relative to today, so they're computed
+ * fresh rather than stored, and picking up month/year rollover for free from Date
+ * arithmetic — same trick `initDatePickers` uses for the default window.
+ */
+const PRESET_DEFS = {
+  'full-year': () => ({ startMonth: 1, startDay: 1, endMonth: 12, endDay: 31 }),
+  'this-month': () => {
+    const today = new Date();
+    const month = today.getMonth() + 1;
+    return { startMonth: month, startDay: 1, endMonth: month, endDay: daysInMonth(month, today.getFullYear()) };
+  },
+  'next-7': () => nextDaysWindow(7),
+  'next-30': () => nextDaysWindow(30),
+};
+
+/** Today through today + (days - 1), inclusive — a `days`-long window starting now. */
+function nextDaysWindow(days) {
+  const start = new Date();
+  const end = new Date(start.getTime() + (days - 1) * 86400000);
+  return {
+    startMonth: start.getMonth() + 1,
+    startDay: start.getDate(),
+    endMonth: end.getMonth() + 1,
+    endDay: end.getDate(),
+  };
+}
+
+function getPresetValue() {
+  return [...dom.presetInputs].find((input) => input.checked)?.value ?? 'custom';
+}
+
+function setPresetValue(value) {
+  for (const input of dom.presetInputs) input.checked = input.value === value;
+}
+
+/** Which preset (if any) the current pickers match; 'custom' when none do. */
+function detectPreset(startMD, endMD) {
+  for (const [value, def] of Object.entries(PRESET_DEFS)) {
+    const p = def();
+    if (formatMD(p.startMonth, p.startDay) === startMD && formatMD(p.endMonth, p.endDay) === endMD) {
+      return value;
+    }
+  }
+  return 'custom';
+}
+
 /** Quick-select presets; "custom" leaves the pickers alone. */
 function applyPreset() {
-  if (dom.preset.value !== 'full-year') return;
+  const def = PRESET_DEFS[getPresetValue()];
+  if (!def) return;
 
-  dom.startMonth.value = '1';
+  const { startMonth, startDay, endMonth, endDay } = def();
+  dom.startMonth.value = String(startMonth);
   fillDays(dom.startMonth, dom.startDay);
-  dom.startDay.value = '1';
+  dom.startDay.value = String(startDay);
 
-  dom.endMonth.value = '12';
+  dom.endMonth.value = String(endMonth);
   fillDays(dom.endMonth, dom.endDay);
-  dom.endDay.value = '31';
+  dom.endDay.value = String(endDay);
 
   onWindowChanged();
 }
@@ -275,7 +327,7 @@ function applyPreset() {
 /** Hand-editing the pickers means the preset no longer describes them. */
 function onWindowChanged() {
   const { startMD, endMD } = currentWindow();
-  dom.preset.value = startMD === '01-01' && endMD === '12-31' ? 'full-year' : 'custom';
+  setPresetValue(detectPreset(startMD, endMD));
   updateWindowNote();
   updateChipYears();
 }
@@ -1285,7 +1337,7 @@ function init() {
   onWindowChanged();
   updateCacheNote();
 
-  dom.preset.addEventListener('change', applyPreset);
+  for (const input of dom.presetInputs) input.addEventListener('change', applyPreset);
 
   dom.searchBtn.addEventListener('click', handleSearch);
   dom.locationInput.addEventListener('input', onLocationInput);
