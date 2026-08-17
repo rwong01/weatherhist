@@ -19,7 +19,32 @@
 
   <body>
     <header class="page-header">
-      <h1>WeatherHist</h1>
+      <div class="header-top">
+        <h1>WeatherHist</h1>
+        <div class="theme-toggle" role="radiogroup" aria-label="Colour theme">
+          <label class="theme-option">
+            <input type="radio" name="theme" value="light" />
+            <span title="Light theme">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g stroke-linecap="round"><path d="M12 2.6v2.4M12 19v2.4M2.6 12h2.4M19 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3L17 7M7 17l-1.7 1.7"/></g></svg>
+              <span class="visually-hidden">Light</span>
+            </span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="auto" checked />
+            <span title="Follow system theme">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.8" y="4.2" width="18.4" height="12.6" rx="2"/><path d="M8.5 20.4h7" stroke-linecap="round"/></svg>
+              <span class="visually-hidden">Auto</span>
+            </span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="dark" />
+            <span title="Dark theme">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z" stroke-linejoin="round"/></svg>
+              <span class="visually-hidden">Dark</span>
+            </span>
+          </label>
+        </div>
+      </div>
       <p class="tagline">
         How was the weather, historically? Pick a place, a slice of the calendar, and a
         variable — see the distribution across every year in the window.
@@ -33,7 +58,7 @@
           <h2 class="field-group-title">1 · Location</h2>
           <div class="row">
             <label class="grow">
-              <span class="label-text">Address, city, ZIP, or lat, long</span>
+              <span class="label-text">Location</span>
               <input
                 id="location-input"
                 type="text"
@@ -80,33 +105,38 @@
         <!-- 3. Lookback -->
         <section class="field-group">
           <h2 class="field-group-title">3 · Lookback window</h2>
-          <div class="radio-row" role="group" aria-label="Lookback windows">
+          <div class="chip-row" role="group" aria-label="Lookback windows">
             <label class="chip">
               <input type="checkbox" name="lookback" value="10" checked />
-              <span>
-                <span class="chip-label">10 years</span>
-                <span class="chip-years" data-years-for="10"></span>
+              <span class="chip-body">
+                <span class="chip-box" aria-hidden="true"></span>
+                <span class="chip-text">
+                  <span class="chip-label">10 years</span>
+                  <span class="chip-years" data-years-for="10"></span>
+                </span>
               </span>
             </label>
             <label class="chip">
               <input type="checkbox" name="lookback" value="20" />
-              <span>
-                <span class="chip-label">20 years</span>
-                <span class="chip-years" data-years-for="20"></span>
+              <span class="chip-body">
+                <span class="chip-box" aria-hidden="true"></span>
+                <span class="chip-text">
+                  <span class="chip-label">20 years</span>
+                  <span class="chip-years" data-years-for="20"></span>
+                </span>
               </span>
             </label>
             <label class="chip">
               <input type="checkbox" name="lookback" value="30" />
-              <span>
-                <span class="chip-label">30 years</span>
-                <span class="chip-years" data-years-for="30"></span>
+              <span class="chip-body">
+                <span class="chip-box" aria-hidden="true"></span>
+                <span class="chip-text">
+                  <span class="chip-label">30 years</span>
+                  <span class="chip-years" data-years-for="30"></span>
+                </span>
               </span>
             </label>
           </div>
-          <p class="hint">
-            Tick more than one to overlay them. The windows are nested, so overlaid
-            charts are plotted as a share of days rather than raw counts.
-          </p>
         </section>
 
         <!-- 4. Variable -->
@@ -132,7 +162,7 @@
               </select>
             </label>
           </div>
-          <p id="model-note" class="hint"></p>
+          <p id="model-note" class="hint" hidden></p>
         </section>
 
         <div class="actions">
@@ -151,8 +181,14 @@
             <p id="results-subtitle" class="results-subtitle"></p>
           </div>
           <div class="export-actions">
-            <button id="export-png-btn" type="button" class="ghost">Export chart (PNG)</button>
-            <button id="export-csv-btn" type="button" class="ghost">Export table (CSV)</button>
+            <button id="export-png-btn" type="button" class="ghost icon-btn" title="Download the chart as a PNG image">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11m0 0 4-4m-4 4-4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2.4h16V17" stroke-linecap="round"/></svg>
+              PNG
+            </button>
+            <button id="export-csv-btn" type="button" class="ghost icon-btn" title="Download the data table as a CSV file">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11m0 0 4-4m-4 4-4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2.4h16V17" stroke-linecap="round"/></svg>
+              CSV
+            </button>
           </div>
         </div>
 

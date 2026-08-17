@@ -37,6 +37,9 @@ const LEAP_REFERENCE_YEAR = 2024;
 
 const ATTRIBUTION = 'Weather data by Open-Meteo.com (CC BY 4.0)';
 
+// Kept outside the data-cache namespace so "Clear cache" doesn't reset the theme.
+const THEME_KEY = 'weatherhist:theme';
+
 /** Provenance line for exports — the model materially changes the numbers. */
 const sourceLine = (model) => `${ATTRIBUTION} · reanalysis: ${model.id}`;
 
@@ -69,6 +72,7 @@ const dom = {
   resultsSubtitle: el('results-subtitle'),
   stats: el('stats'),
   canvas: el('histogram'),
+  themeInputs: document.querySelectorAll('input[name="theme"]'),
   binTableHead: document.querySelector('#bin-table thead'),
   binTableBody: document.querySelector('#bin-table tbody'),
 };
@@ -121,6 +125,46 @@ function updateCacheNote() {
   dom.cacheNote.textContent = entries
     ? `${entries} year${entries === 1 ? '' : 's'} cached (${Math.max(1, Math.round(bytes / 1024))} KB)`
     : 'Nothing cached yet';
+}
+
+// --- theme -------------------------------------------------------------------
+
+/**
+ * "auto" removes the attribute so the prefers-color-scheme media query takes over;
+ * "light"/"dark" stamp it so an explicit choice beats the OS in both directions.
+ */
+function applyTheme(choice) {
+  if (choice === 'light' || choice === 'dark') {
+    document.documentElement.dataset.theme = choice;
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+}
+
+function initTheme() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem(THEME_KEY);
+  } catch {
+    // Storage can be blocked; the control still works for this page view.
+  }
+  const choice = ['light', 'dark', 'auto'].includes(saved) ? saved : 'auto';
+
+  applyTheme(choice);
+  for (const input of dom.themeInputs) {
+    input.checked = input.value === choice;
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      applyTheme(input.value);
+      try {
+        localStorage.setItem(THEME_KEY, input.value);
+      } catch {
+        // Non-fatal: the choice just won't survive a reload.
+      }
+      // Chart colours are read from CSS custom properties, so it must re-render.
+      if (state.result) renderResult();
+    });
+  }
 }
 
 // --- date pickers ------------------------------------------------------------
@@ -199,16 +243,17 @@ function currentWindow() {
  */
 function updateModelNote() {
   const model = getModel(dom.model.value);
-  const overlaying = currentLookbacks().length > 1;
+  // The dropdown labels already describe each model, so the full description lives
+  // in the tooltip. Only the caution — which no label can express — gets prose.
+  dom.model.title = model.note;
 
-  dom.modelNote.textContent =
-    model.note +
-    (overlaying && !model.homogeneous
-      ? ' Heads up: with more than one window overlaid, part of the difference between' +
-        ' them may come from the 2017 resolution change rather than the weather.' +
-        ' Switch to an ERA5 option for a like-for-like comparison.'
-      : '');
-  dom.modelNote.classList.toggle('warn', overlaying && !model.homogeneous);
+  const warn = currentLookbacks().length > 1 && !model.homogeneous;
+  dom.modelNote.hidden = !warn;
+  dom.modelNote.classList.toggle('warn', warn);
+  dom.modelNote.textContent = warn
+    ? 'Comparing windows on this model: part of the difference between them may come' +
+      ' from its 2017 resolution change rather than the weather.'
+    : '';
 }
 
 function currentLookbacks() {
@@ -226,24 +271,43 @@ function updateChipYears() {
   }
 }
 
+/**
+ * Tint each ticked chip with the colour its series will have in the chart, so the
+ * selector doubles as the legend. Colours follow position among the checked boxes,
+ * matching how renderResult assigns them.
+ */
+function updateChipColors() {
+  const colors = readTheme().seriesColors;
+  let checkedIndex = 0;
+  for (const input of dom.form.querySelectorAll('input[name="lookback"]')) {
+    const chip = input.closest('.chip');
+    if (input.checked) {
+      chip.style.setProperty('--chip-color', colors[checkedIndex % colors.length]);
+      checkedIndex += 1;
+    } else {
+      chip.style.removeProperty('--chip-color');
+    }
+  }
+}
+
 function updateWindowNote() {
   const { startMD, endMD } = currentWindow();
   const lookbacks = currentLookbacks();
   const days = windowLength(startMD, endMD);
 
-  const parts = [`${days} day${days === 1 ? '' : 's'} per year`];
-  if (endMD < startMD) parts.push('window wraps into the next calendar year');
-
-  if (lookbacks.length === 0) {
-    parts.push('pick at least one lookback window');
-  } else {
+  // Only what the controls can't already show: the window's length in days, the
+  // wrap, and how much will be fetched.
+  const parts = [`${days} days per year`];
+  if (endMD < startMD) parts.push('wraps into the next year');
+  if (lookbacks.length) {
     // The windows are nested, so the largest is all the data actually fetched.
     const { years } = seasonYears(Math.max(...lookbacks), startMD, endMD);
-    parts.push(`${years.length} years to load · up to ${days * years.length} data points`);
+    parts.push(`${years.length} years to load`);
   }
 
   dom.windowNote.textContent = parts.join(' · ');
   dom.generateBtn.disabled = lookbacks.length === 0 || Boolean(state.inFlight);
+  updateChipColors();
   updateModelNote();
 }
 
@@ -613,6 +677,8 @@ function initVariableSelect() {
 }
 
 function init() {
+  initTheme();
+
   MODELS.forEach((m) => dom.model.append(option(m.id, m.label)));
   dom.model.value = DEFAULT_MODEL;
   dom.model.addEventListener('change', updateModelNote);
@@ -654,8 +720,9 @@ function init() {
     setStatus(removed ? `Cleared ${removed} cached year${removed === 1 ? '' : 's'}.` : 'Cache was already empty.');
   });
 
-  // Re-render on theme change so the chart's colors follow the page.
+  // Under "auto" the OS can flip out from under us; chart colours must follow.
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    updateChipColors();
     if (state.result) renderResult();
   });
 }

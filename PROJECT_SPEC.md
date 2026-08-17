@@ -185,7 +185,11 @@ plain DOM updates are fine given the app's scope.
 - Date range picker constrained to month/day (year is irrelevant to the picker).
 - Lookback window: **checkboxes** for 10 / 20 / 30 years — any combination can be
   ticked to overlay up to three windows on one chart. Each shows the concrete years
-  it covers as subtext, recomputed when the date range changes.
+  it covers as subtext, recomputed when the date range changes. A ticked box takes
+  the colour its series will have in the chart, so the selector doubles as a legend.
+- A Light / Auto / Dark control in the header. Auto follows `prefers-color-scheme`;
+  an explicit choice beats the OS in both directions and persists in `localStorage`
+  under a key outside the data-cache namespace, so "Clear cache" doesn't reset it.
 - Date range quick-select for "Full year (Jan 1 - Dec 31)"; hand-editing the
   month/day pickers drops the preset back to "Custom".
 - Variable dropdown.
@@ -201,6 +205,24 @@ plain DOM updates are fine given the app's scope.
 - A GitHub link in the bottom-left corner and a Buy Me a Coffee widget in the
   bottom-right, the latter rendered closed (`data-message=""`).
 - Mobile-responsive, desktop-first.
+
+### Let the controls do the explaining
+
+Where a control can express its own behaviour, it does, and the prose comes out:
+
+- The lookback control uses real checkboxes with visible tick boxes on rectangular
+  cards, not pills — a pill row reads as "pick one". No sentence is needed to say
+  multiple can be selected.
+- Ticked windows are colour-matched to their chart series, so no text has to explain
+  which bars belong to which window.
+- The "% of days" y-axis label carries the fact that overlaid windows are normalised.
+- Each reanalysis option's dropdown label states its trade-off; the full description
+  is the select's tooltip. Only the caution that no label can express — mixing an
+  inhomogeneous model with multiple windows — appears as visible prose, and only
+  when it applies.
+- The location placeholder shows the accepted formats, so the field label is just
+  "Location".
+- Export buttons are a download icon plus PNG / CSV.
 
 ## Explicit Non-Goals for v1
 

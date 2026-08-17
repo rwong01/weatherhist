@@ -1,4 +1,4 @@
-/* WeatherHist — light-first, with a selected dark mode (not an automatic flip). */
+/* WeatherHist — light-first, with a selected dark mode and a Light/Auto/Dark control. */
 
 :root {
   color-scheme: light;
@@ -25,6 +25,16 @@
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.05), 0 6px 20px rgba(11, 11, 11, 0.05);
 }
 
+/*
+ * Three theme states, set by the header control:
+ *   no data-theme  -> follow the OS (Auto)
+ *   data-theme=light / dark -> explicit choice, which must beat the OS both ways
+ *
+ * The dark tokens are declared twice on purpose: once under the media query for
+ * Auto, once under the attribute so an explicit choice wins. The :not() guard lets
+ * an explicit light stamp beat OS-dark; :where() keeps the media block's
+ * specificity at zero so the attribute selector always outranks it.
+ */
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme='light'])) {
     color-scheme: dark;
@@ -49,6 +59,30 @@
 
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
   }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface-0: #121211;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --border: #34342f;
+  --border-strong: #4a4a44;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #96958c;
+
+  /* The same three hues, re-stepped for the dark surface (not an automatic flip). */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-1-soft: #1d2b3d;
+  --grid: rgba(255, 255, 255, 0.1);
+  --danger: #e66767;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 *,
@@ -77,6 +111,65 @@ main,
 
 .page-header {
   margin-bottom: 1.5rem;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Segmented Light / Auto / Dark control — icon-only; the shape says "pick one". */
+.theme-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.theme-option {
+  position: relative;
+  display: flex;
+}
+
+.theme-option input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.theme-option > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+
+.theme-option svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+.theme-option input:checked + span {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.theme-option input:focus-visible + span {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
 }
 
 h1 {
@@ -227,9 +320,9 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
-/* --- radio chips ----------------------------------------------------------- */
+/* --- lookback checkboxes ---------------------------------------------------- */
 
-.radio-row {
+.chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -247,14 +340,48 @@ button:disabled {
   cursor: pointer;
 }
 
-.chip > span {
-  display: block;
-  padding: 0.4rem 0.95rem;
+/*
+ * Square box + tick, and a rectangular card rather than a pill. A pill row reads as
+ * "pick one"; a visible checkbox reads as "pick any", which is what this control is.
+ */
+.chip-body {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.9rem 0.5rem 0.7rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: 10px;
   font-size: 0.9rem;
   color: var(--text-secondary);
-  text-align: center;
+}
+
+.chip-box {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-1);
+  position: relative;
+}
+
+/* Tick drawn as two borders of a rotated box — no icon font, no image request. */
+.chip-box::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg) scale(0);
+  transition: transform 90ms ease-out;
+}
+
+.chip-text {
+  text-align: left;
+  line-height: 1.25;
 }
 
 .chip-label {
@@ -269,16 +396,33 @@ button:disabled {
   color: var(--text-muted);
 }
 
-.chip input:checked + span {
-  background: var(--series-1-soft);
-  border-color: var(--series-1);
+/*
+ * A checked chip takes the colour its series will have in the chart, so the link
+ * between "which windows are ticked" and "which bars are which" needs no legend
+ * text. --chip-color is set per chip by app.js from its position among the checked.
+ */
+.chip input:checked + .chip-body {
+  border-color: var(--chip-color, var(--series-1));
+  box-shadow: inset 0 0 0 1px var(--chip-color, var(--series-1));
   color: var(--text-primary);
-  font-weight: 600;
 }
 
-.chip input:focus-visible + span {
+.chip input:checked + .chip-body .chip-box {
+  background: var(--chip-color, var(--series-1));
+  border-color: var(--chip-color, var(--series-1));
+}
+
+.chip input:checked + .chip-body .chip-box::after {
+  transform: rotate(43deg) scale(1);
+}
+
+.chip input:focus-visible + .chip-body {
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
+}
+
+.chip input:hover:not(:checked) + .chip-body {
+  border-color: var(--text-muted);
 }
 
 /* --- geocoding results ----------------------------------------------------- */
@@ -394,6 +538,20 @@ button:disabled {
 .export-actions button {
   font-size: 0.8125rem;
   padding: 0.4rem 0.7rem;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
 }
 
 .results-title {
