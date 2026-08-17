@@ -125,7 +125,9 @@ The three lookback windows are nested and share an end year, so:
   contains the 10-year one, so counts would make it taller everywhere and the shapes
   incomparable. A single window still plots as a plain count of days.
 - Series colours are categorical slots 1-3, validated for colourblind separation
-  against both the light and dark surfaces.
+  against both the light and dark surfaces. `--accent` is a separate, darker step of
+  the same blue for interactive chrome: a data mark only needs 3:1 against the
+  surface, but a button label sitting on the fill needs 4.5:1.
 - The hover tooltip is inverted against the page — a dark panel on light, a light
   panel on dark — and carries its own `--tooltip-bg` / `--tooltip-text` pair rather
   than borrowing a text token, so its background and its glyph colour can never end
@@ -134,7 +136,11 @@ The three lookback windows are nested and share an end year, so:
 ### Edge cases
 
 - **Leap days.** A start/end day that doesn't exist in a given year (Feb 29) is
-  clamped to the last valid day of that month for that year's request.
+  clamped to the last valid day of that month for that year's request. A window that
+  spans Feb 29 is therefore a day shorter in non-leap years, so anything comparing
+  "days received" against "days expected" sums the per-year lengths rather than
+  multiplying one number — otherwise every non-leap year reads as missing a day. The
+  date-range note reports the real spread ("365–366 days per year").
 - **Ranges that wrap the new year.** Dec 20 - Jan 5 is fetched as one continuous
   request per season (`YYYY-12-20` → `YYYY+1-01-05`) and labeled by its start year.
 - **Archive lag.** The ERA5 archive trails real time by roughly 5 days, so the most

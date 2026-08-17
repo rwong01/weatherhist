@@ -13,6 +13,7 @@ import {
   formatMD,
   formatMDLabel,
   windowLength,
+  windowLengthRange,
   WeatherError,
 } from './lib/weather.js';
 import * as cache from './lib/cache.js';
@@ -311,17 +312,22 @@ function updateChipColors() {
 function updateWindowNote() {
   const { startMD, endMD } = currentWindow();
   const lookbacks = currentLookbacks();
-  const days = windowLength(startMD, endMD);
+  const years = lookbacks.length
+    ? seasonYears(Math.max(...lookbacks), startMD, endMD).years
+    : [];
+
+  // A window covering Feb 29 is a day longer in leap years, so report the real
+  // spread over the selected years rather than one number that's wrong for most.
+  const lengths = years.length
+    ? windowLengthRange(startMD, endMD, years)
+    : [windowLength(startMD, endMD)];
+  const dayLabel = lengths.length > 1 ? `${lengths[0]}–${lengths[lengths.length - 1]}` : `${lengths[0]}`;
 
   // Only what the controls can't already show: the window's length in days, the
   // wrap, and how much will be fetched.
-  const parts = [`${days} days per year`];
+  const parts = [`${dayLabel} days per year`];
   if (endMD < startMD) parts.push('wraps into the next year');
-  if (lookbacks.length) {
-    // The windows are nested, so the largest is all the data actually fetched.
-    const { years } = seasonYears(Math.max(...lookbacks), startMD, endMD);
-    parts.push(`${years.length} years to load`);
-  }
+  if (years.length) parts.push(`${years.length} years to load`);
 
   dom.windowNote.textContent = parts.join(' · ');
   syncGenerateEnabled();
@@ -1045,11 +1051,12 @@ async function handleGenerate(event) {
     if (empty.length) {
       notes.push(`No data for ${empty.map((d) => d.variable.label).join(', ')} at this location.`);
     }
-    const perYear = windowLength(startMD, endMD);
     for (const dataset of usable) {
       for (const w of dataset.windows) {
         if (w.truncated) notes.push(`Only ${w.years.length} of ${w.lookback} years are in the archive.`);
-        const missing = perYear * w.years.length - w.points.length;
+        // expectedDays is summed per year by the fetch layer, so a non-leap year
+        // never looks like it is missing Feb 29.
+        const missing = w.expectedDays - w.points.length;
         if (missing > 0) {
           notes.push(`${dataset.variable.short} ${w.lookback}y: ${missing} day(s) had incomplete hourly data.`);
         }
