@@ -425,35 +425,44 @@ button:disabled {
   border-color: var(--text-muted);
 }
 
-/* --- geocoding results ----------------------------------------------------- */
+/* --- location suggestions --------------------------------------------------- */
 
+.location-field {
+  position: relative;
+}
+
+/*
+ * Overlays the content below rather than pushing it down — the list opens and
+ * closes on every keystroke, and reflowing the form each time is unusable.
+ */
 .geo-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 17rem;
+  overflow-y: auto;
   list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
-  border: 1px solid var(--border);
+  margin: 4px 0 0;
+  padding: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  overflow: hidden;
+  box-shadow: var(--shadow);
 }
 
-.geo-results li + li {
-  border-top: 1px solid var(--border);
+.geo-results li {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9375rem;
 }
 
-.geo-results button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border-radius: 0;
-  border: none;
-  background: none;
-  padding: 0.6rem 0.75rem;
-  font-weight: 400;
-  white-space: normal;
-}
-
-.geo-results button:hover {
-  background: var(--surface-2);
+/* Hover and keyboard cursor share one highlight, so only one row ever looks active. */
+.geo-results li[aria-selected='true'],
+.geo-results li:hover {
+  background: var(--series-1-soft);
 }
 
 .geo-results .place-name {
@@ -464,6 +473,41 @@ button:disabled {
   display: block;
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+.geo-results .geo-empty {
+  cursor: default;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.geo-results .geo-empty:hover {
+  background: none;
+}
+
+/* Sits over the input's right edge while a suggestion request is in flight. */
+.field-spinner {
+  position: absolute;
+  right: 0.65rem;
+  bottom: 0.85rem;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--series-1);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-spinner {
+    animation-duration: 2s;
+  }
 }
 
 .selected-place {
@@ -678,68 +722,62 @@ th {
 
 /* --- footer ---------------------------------------------------------------- */
 
+/*
+ * The GitHub and Buy Me a Coffee buttons sit in the footer's normal flow — one at
+ * each end with the attribution between — rather than floating over the content.
+ */
+:root {
+  --corner-size: 44px;
+}
+
 .page-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+.footer-text {
+  flex: 1;
   text-align: center;
+}
+
+.footer-text p {
+  margin: 0;
+}
+
+.footer-text p + p {
+  margin-top: 0.35rem;
 }
 
 .page-footer a {
   color: inherit;
 }
 
-/* --- floating corner links ------------------------------------------------- */
-
-/*
- * The GitHub link (bottom left) and the Buy Me a Coffee widget (bottom right) are
- * both pinned to the bottom of the viewport at the same size and the same offset,
- * so they read as a matched pair of corners.
- */
-:root {
-  --corner-size: 56px;
-  --corner-offset: 18px; /* matches the widget's data-x_margin / data-y_margin */
-}
-
-.repo-link {
-  position: fixed;
-  left: var(--corner-offset);
-  bottom: var(--corner-offset);
+.repo-link,
+.coffee-slot {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
   width: var(--corner-size);
   height: var(--corner-size);
+}
+
+.repo-link {
   border-radius: 50%;
-  background: var(--surface-1);
   border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow);
+  background: var(--surface-1);
   color: var(--text-secondary);
 }
 
 .repo-link svg {
-  width: 26px;
-  height: 26px;
-}
-
-/*
- * Size the Buy Me a Coffee button to match. The widget injects its own element with
- * inline styles, so these need !important to win. Scoped to the widget's own id, so
- * if it ever renames that element these rules simply stop applying rather than
- * breaking anything.
- */
-#bmc-wbtn,
-#bmc-wbtn img {
-  width: var(--corner-size) !important;
-  height: var(--corner-size) !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-}
-
-#bmc-wbtn {
-  bottom: var(--corner-offset) !important;
-  right: var(--corner-offset) !important;
-  margin: 0 !important;
+  width: 22px;
+  height: 22px;
 }
 
 .repo-link:hover {
@@ -752,9 +790,36 @@ th {
   outline-offset: 2px;
 }
 
-/* Keep the fixed corner widgets clear of the footer text on short viewports. */
-body {
-  padding-bottom: 5.5rem;
+/*
+ * The widget appends a fixed-position button to <body>; app.js re-parents it into
+ * .coffee-slot and this unpins it so it sits in the footer row at a matching size.
+ * Scoped to the widget's own id — if it renames that element the rules simply stop
+ * applying and it keeps its own default rendering.
+ */
+.coffee-slot #bmc-wbtn,
+.coffee-slot #bmc-wbtn img {
+  width: var(--corner-size) !important;
+  height: var(--corner-size) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.coffee-slot #bmc-wbtn {
+  position: static !important;
+  margin: 0 !important;
+  inset: auto !important;
+}
+
+@media (max-width: 34rem) {
+  .page-footer {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .footer-text {
+    order: -1;
+    flex-basis: 100%;
+  }
 }
 
 .visually-hidden {

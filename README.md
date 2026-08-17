@@ -42,7 +42,7 @@ no API key.
 | `index.html`     | Markup and the Chart.js CDN tag                                       |
 | `style.css`      | Theme tokens (light + selected dark mode) and layout                  |
 | `app.js`         | Control wiring and render orchestration                               |
-| `lib/geocode.js` | Open-Meteo geocoding, plus raw `lat, long` parsing                    |
+| `lib/geocode.js` | Open-Meteo geocoding (typeahead + explicit), raw `lat, long` parsing  |
 | `lib/weather.js` | Variable table, season-year math, archive fetch, daily aggregation    |
 | `lib/cache.js`   | `localStorage` cache, keyed per location/variable/window/year         |
 | `lib/chart.js`   | Binning, summary statistics, histogram rendering                      |
@@ -66,6 +66,17 @@ Notes worth knowing:
   series share one set of bin edges computed over their pooled values.
 - Overlaid windows are fetched as a single union: ticking 10 + 20 + 30 loads 30
   years once, not 60 requests' worth.
+
+## Location search
+
+The location field is a typeahead. It queries Open-Meteo's geocoder as you type,
+debounced at 250 ms with a two-character minimum, caching responses for the page
+view and aborting any request a later keystroke supersedes — a full city name costs
+one request, not one per keystroke. Input that looks like `lat, long` resolves
+locally without touching the geocoder.
+
+Arrow keys move through suggestions, Enter picks one, Escape dismisses. The Search
+button still works as an explicit fallback.
 
 ## Data source
 

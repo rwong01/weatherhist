@@ -1,6 +1,6 @@
 // WeatherHist — wires the DOM controls to geocoding, the archive fetch, and the chart.
 
-import { geocode, formatPlace, GeocodeError } from './lib/geocode.js';
+import { geocode, parseLatLon, formatPlace, GeocodeError } from './lib/geocode.js';
 import {
   variableGroups,
   MODELS,
@@ -40,6 +40,11 @@ const ATTRIBUTION = 'Weather data by Open-Meteo.com (CC BY 4.0)';
 // Kept outside the data-cache namespace so "Clear cache" doesn't reset the theme.
 const THEME_KEY = 'weatherhist:theme';
 
+// Typeahead pacing. The debounce plus the two-character floor plus the in-memory
+// response cache keep a fast typist well inside Open-Meteo's free-tier limits.
+const SUGGEST_DEBOUNCE_MS = 250;
+const SUGGEST_MIN_CHARS = 2;
+
 /** Provenance line for exports — the model materially changes the numbers. */
 const sourceLine = (model) => `${ATTRIBUTION} · reanalysis: ${model.id}`;
 
@@ -50,6 +55,7 @@ const dom = {
   locationInput: el('location-input'),
   searchBtn: el('search-btn'),
   geoResults: el('geo-results'),
+  geoSpinner: el('geo-spinner'),
   selectedPlace: el('selected-place'),
   preset: el('preset'),
   startMonth: el('start-month'),
@@ -84,7 +90,15 @@ const state = {
   /** What the last render produced, so exports match exactly what's on screen. */
   view: null,
   inFlight: null,
+  /** Typeahead: the places on screen, the keyboard cursor, and the live request. */
+  suggestions: [],
+  activeIndex: -1,
+  suggestController: null,
+  suggestTimer: null,
 };
+
+/** Suggestion responses for this page view, so backspacing doesn't refetch. */
+const suggestCache = new Map();
 
 // --- small helpers -----------------------------------------------------------
 
@@ -315,47 +329,172 @@ function updateWindowNote() {
 
 function selectPlace(place) {
   state.place = place;
-  dom.geoResults.hidden = true;
-  dom.geoResults.replaceChildren();
+  closeSuggestions();
+  dom.locationInput.value = formatPlace(place);
   dom.selectedPlace.hidden = false;
   dom.selectedPlace.textContent = `Using ${formatPlace(place)}`;
   setStatus('');
 }
 
-function showGeoResults(places) {
+function closeSuggestions() {
+  state.suggestions = [];
+  state.activeIndex = -1;
+  dom.geoResults.hidden = true;
   dom.geoResults.replaceChildren();
-  for (const place of places) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.append(
-      cell('span', place.name, 'place-name'),
-      cell(
-        'span',
-        [place.admin1, place.country].filter(Boolean).join(', ') +
-          ` · ${place.latitude.toFixed(3)}, ${place.longitude.toFixed(3)}`,
-        'place-meta'
-      )
-    );
-    btn.addEventListener('click', () => selectPlace(place));
-
-    const li = document.createElement('li');
-    li.append(btn);
-    dom.geoResults.append(li);
-  }
-  dom.geoResults.hidden = false;
+  dom.locationInput.setAttribute('aria-expanded', 'false');
+  dom.locationInput.removeAttribute('aria-activedescendant');
 }
 
+/** Move the keyboard cursor; the input keeps focus and points at the active row. */
+function setActive(index) {
+  const options = dom.geoResults.querySelectorAll('[role="option"]');
+  if (!options.length) return;
+
+  state.activeIndex = (index + options.length) % options.length;
+  options.forEach((li, i) => {
+    const active = i === state.activeIndex;
+    li.setAttribute('aria-selected', String(active));
+    if (active) {
+      dom.locationInput.setAttribute('aria-activedescendant', li.id);
+      li.scrollIntoView({ block: 'nearest' });
+    }
+  });
+}
+
+function openSuggestions(places) {
+  state.suggestions = places;
+  state.activeIndex = -1;
+  dom.geoResults.replaceChildren();
+
+  if (places.length === 0) {
+    // Reported in the list itself rather than the status bar, where the eye isn't.
+    const li = cell('li', 'No matching places', 'geo-empty');
+    dom.geoResults.append(li);
+  } else {
+    places.forEach((place, i) => {
+      const li = document.createElement('li');
+      li.role = 'option';
+      li.id = `geo-option-${i}`;
+      li.setAttribute('aria-selected', 'false');
+      li.append(
+        cell('span', place.name, 'place-name'),
+        cell(
+          'span',
+          [place.admin1, place.country].filter(Boolean).join(', ') +
+            ` · ${place.latitude.toFixed(3)}, ${place.longitude.toFixed(3)}`,
+          'place-meta'
+        )
+      );
+      // mousedown, not click: it fires before the input's blur closes the list.
+      li.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        selectPlace(place);
+      });
+      dom.geoResults.append(li);
+    });
+  }
+
+  dom.geoResults.hidden = false;
+  dom.locationInput.setAttribute('aria-expanded', 'true');
+}
+
+/** Fetch suggestions for `query`, superseding any request already in flight. */
+async function loadSuggestions(query) {
+  const key = query.toLowerCase();
+  if (suggestCache.has(key)) {
+    openSuggestions(suggestCache.get(key));
+    return;
+  }
+
+  state.suggestController?.abort();
+  const controller = new AbortController();
+  state.suggestController = controller;
+  dom.geoSpinner.hidden = false;
+
+  try {
+    const places = await geocode(query, { count: 6, signal: controller.signal });
+    if (controller.signal.aborted) return;
+    suggestCache.set(key, places);
+    openSuggestions(places);
+  } catch (err) {
+    // A superseded keystroke is not an error worth showing; a real failure just
+    // leaves the list closed, and the Search button reports it properly.
+    if (err?.name !== 'AbortError') closeSuggestions();
+  } finally {
+    if (state.suggestController === controller) {
+      state.suggestController = null;
+      dom.geoSpinner.hidden = true;
+    }
+  }
+}
+
+function onLocationInput() {
+  // Typing invalidates the previously chosen place.
+  state.place = null;
+  dom.selectedPlace.hidden = true;
+
+  clearTimeout(state.suggestTimer);
+  const query = dom.locationInput.value.trim();
+
+  // Nothing to suggest for coordinates — they resolve without the geocoder.
+  if (query.length < SUGGEST_MIN_CHARS || parseLatLon(query)) {
+    state.suggestController?.abort();
+    dom.geoSpinner.hidden = true;
+    closeSuggestions();
+    return;
+  }
+
+  state.suggestTimer = setTimeout(() => loadSuggestions(query), SUGGEST_DEBOUNCE_MS);
+}
+
+function onLocationKeydown(event) {
+  const open = !dom.geoResults.hidden && state.suggestions.length > 0;
+
+  switch (event.key) {
+    case 'ArrowDown':
+      if (open) {
+        event.preventDefault();
+        setActive(state.activeIndex + 1);
+      }
+      break;
+    case 'ArrowUp':
+      if (open) {
+        event.preventDefault();
+        setActive(state.activeIndex - 1);
+      }
+      break;
+    case 'Escape':
+      if (!dom.geoResults.hidden) {
+        event.preventDefault();
+        closeSuggestions();
+      }
+      break;
+    case 'Tab':
+      closeSuggestions();
+      break;
+    case 'Enter':
+      event.preventDefault(); // never submit the form from this field
+      if (open && state.activeIndex >= 0) selectPlace(state.suggestions[state.activeIndex]);
+      else handleSearch();
+      break;
+    default:
+      break;
+  }
+}
+
+/** Explicit search: same list, but immediate, and a lone hit selects itself. */
 async function handleSearch() {
   const query = dom.locationInput.value.trim();
-  dom.geoResults.hidden = true;
+  clearTimeout(state.suggestTimer);
   dom.searchBtn.disabled = true;
   setStatus('Searching for that location…');
 
   try {
-    const places = await geocode(query);
+    const places = await geocode(query, { count: 6 });
 
     if (places.length === 0) {
       setStatus(`No location found for "${query}". Try a city and state, a ZIP code, or raw "lat, long".`, 'error');
+      closeSuggestions();
       return;
     }
     if (places.length === 1) {
@@ -364,8 +503,8 @@ async function handleSearch() {
     }
 
     // Ambiguous — let the user disambiguate rather than guessing the first hit.
-    showGeoResults(places);
-    setStatus(`${places.length} matches — pick one.`);
+    openSuggestions(places);
+    setStatus('');
   } catch (err) {
     setStatus(err instanceof GeocodeError ? err.message : 'Something went wrong while geocoding.', 'error');
   } finally {
@@ -676,8 +815,36 @@ function initVariableSelect() {
   dom.variable.value = 'wind_gust_max'; // the spec's motivating example
 }
 
+/**
+ * The Buy Me a Coffee widget appends a fixed-position button to <body>. Move it
+ * into the footer so it sits in the page instead of floating over the content. If
+ * the widget never loads or renames its element, nothing happens and it keeps its
+ * own default rendering.
+ */
+function dockCoffeeWidget() {
+  const slot = el('coffee-slot');
+  if (!slot) return;
+
+  const dock = () => {
+    const button = document.getElementById('bmc-wbtn');
+    if (!button || button.parentElement === slot) return Boolean(button);
+    slot.append(button);
+    return true;
+  };
+
+  if (dock()) return;
+
+  const observer = new MutationObserver(() => {
+    if (dock()) observer.disconnect();
+  });
+  observer.observe(document.body, { childList: true });
+  // Stop watching rather than observing forever if the widget never arrives.
+  setTimeout(() => observer.disconnect(), 15000);
+}
+
 function init() {
   initTheme();
+  dockCoffeeWidget();
 
   MODELS.forEach((m) => dom.model.append(option(m.id, m.label)));
   dom.model.value = DEFAULT_MODEL;
@@ -691,17 +858,10 @@ function init() {
   dom.preset.addEventListener('change', applyPreset);
 
   dom.searchBtn.addEventListener('click', handleSearch);
-  dom.locationInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault(); // don't submit the form before a place is chosen
-      handleSearch();
-    }
-  });
-  dom.locationInput.addEventListener('input', () => {
-    // Typing invalidates the previously chosen place.
-    state.place = null;
-    dom.selectedPlace.hidden = true;
-  });
+  dom.locationInput.addEventListener('input', onLocationInput);
+  dom.locationInput.addEventListener('keydown', onLocationKeydown);
+  dom.locationInput.addEventListener('focus', onLocationInput);
+  dom.locationInput.addEventListener('blur', () => setTimeout(closeSuggestions, 0));
 
   dom.form.addEventListener('submit', handleGenerate);
   dom.form

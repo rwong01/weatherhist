@@ -180,8 +180,14 @@ plain DOM updates are fine given the app's scope.
 ## UI Requirements
 
 - Single page, no routing.
-- Location input with a "search" button, showing a disambiguation list if geocoding
-  returns multiple matches.
+- Location input with **typeahead suggestions**: an ARIA combobox that queries the
+  geocoder as the user types, debounced at 250 ms with a two-character floor and an
+  in-memory response cache, aborting any request a later keystroke supersedes. Input
+  that parses as `lat, long` skips the geocoder entirely. Arrow keys move an
+  `aria-activedescendant` cursor without taking focus off the input; Enter picks the
+  active row or runs an explicit search; Escape dismisses. "No matching places" is
+  reported inside the list rather than in the status bar. The Search button remains
+  as an explicit fallback and auto-selects a lone hit.
 - Date range picker constrained to month/day (year is irrelevant to the picker).
 - Lookback window: **checkboxes** for 10 / 20 / 30 years — any combination can be
   ticked to overlay up to three windows on one chart. Each shows the concrete years
@@ -202,8 +208,12 @@ plain DOM updates are fine given the app's scope.
 - Export buttons: chart to PNG (composited onto an opaque background with title and
   attribution) and the data table to CSV (a days/share column pair per window plus a
   provenance block).
-- A GitHub link in the bottom-left corner and a Buy Me a Coffee widget in the
-  bottom-right, the latter rendered closed (`data-message=""`).
+- A footer row carrying a GitHub link at one end and the Buy Me a Coffee button at
+  the other, with the attribution between them. Both sit in the page's normal flow
+  and scroll with the content rather than floating over it — the widget appends a
+  fixed-position button to `<body>`, so `app.js` re-parents it into the footer and
+  CSS unpins it. If the widget never loads, the observer gives up and the footer
+  simply shows the GitHub link.
 - Mobile-responsive, desktop-first.
 
 ### Let the controls do the explaining
