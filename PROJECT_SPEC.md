@@ -182,6 +182,8 @@ The three lookback windows are nested and share an end year, so:
 │   ├── chart.js     # histogram rendering with Chart.js
 │   ├── export.js    # PNG + CSV download helpers
 │   └── recent.js    # recent locations for this browser session
+├── test/
+│   └── logic.test.mjs   # dependency-free tests for the pure logic
 └── PROJECT_SPEC.md  # this file
 ```
 

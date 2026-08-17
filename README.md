@@ -22,6 +22,22 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+## Tests
+
+```sh
+node test/logic.test.mjs
+```
+
+No dependencies and no runner to install — the suite covers the pure logic the rest
+of the app rests on: the calendar-window maths (including leap days and windows that
+wrap the new year), which years get requested, hourly-to-daily aggregation, the
+summary statistics, binning and shared bin edges, the variable table's integrity,
+cache-key separation, and CSV/filename escaping.
+
+The DOM-facing layers — typeahead, theme control, the variable picker, chart
+rendering and the exports — are verified by driving a real browser instead, since
+what matters there is what actually gets painted.
+
 ## Deploying
 
 Cloudflare Pages, connected directly to this repo:
@@ -44,10 +60,11 @@ no API key.
 | `app.js`         | Control wiring and render orchestration                               |
 | `lib/geocode.js` | Open-Meteo geocoding (typeahead + explicit), raw `lat, long` parsing  |
 | `lib/weather.js` | Variable table, season-year math, archive fetch, daily aggregation    |
-| `lib/cache.js`   | `localStorage` cache, keyed per location/variable/window/year          |
+| `lib/cache.js`   | `localStorage` cache, keyed per location/variable/window/year/model    |
 | `lib/recent.js`  | Recent locations for this browser session (`sessionStorage`)           |
-| `lib/chart.js`   | Binning, summary statistics, histogram rendering                      |
+| `lib/chart.js`   | Binning, summary statistics, histogram rendering                       |
 | `lib/export.js`  | PNG and CSV download helpers                                          |
+| `test/`          | Dependency-free logic tests (`node test/logic.test.mjs`)              |
 
 Notes worth knowing:
 

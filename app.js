@@ -92,8 +92,6 @@ const state = {
   variableIds: ['wind_gust_max'], // the spec's motivating example
   /** Last successful fetch, kept so bin changes re-render without re-fetching. */
   result: null,
-  /** One view per rendered panel, so each panel's exports match what it shows. */
-  views: [],
   inFlight: null,
   /** Typeahead: the places on screen, the keyboard cursor, and the live request. */
   suggestions: [],
@@ -102,8 +100,20 @@ const state = {
   suggestTimer: null,
 };
 
-/** Suggestion responses for this page view, so backspacing doesn't refetch. */
+/**
+ * Suggestion responses for this page view, so backspacing doesn't refetch. Bounded
+ * because a long typing session would otherwise keep every prefix ever queried:
+ * insertion-ordered Map, so deleting the first key evicts the oldest entry.
+ */
+const SUGGEST_CACHE_MAX = 50;
 const suggestCache = new Map();
+
+function cacheSuggestions(key, places) {
+  suggestCache.set(key, places);
+  while (suggestCache.size > SUGGEST_CACHE_MAX) {
+    suggestCache.delete(suggestCache.keys().next().value);
+  }
+}
 
 // --- small helpers -----------------------------------------------------------
 
@@ -113,11 +123,10 @@ function setStatus(message, kind = 'info') {
   dom.status.classList.toggle('error', kind === 'error');
 }
 
-function option(value, label, selected = false) {
+function option(value, label) {
   const o = document.createElement('option');
   o.value = String(value);
   o.textContent = label;
-  o.selected = selected;
   return o;
 }
 
@@ -432,7 +441,7 @@ async function loadSuggestions(query) {
   try {
     const places = await geocode(query, { count: 6, signal: controller.signal });
     if (controller.signal.aborted) return;
-    suggestCache.set(key, places);
+    cacheSuggestions(key, places);
     openSuggestions(places);
   } catch (err) {
     // A superseded keystroke is not an error worth showing; a real failure just
@@ -907,8 +916,6 @@ function renderResult() {
   const result = state.result;
   destroyAllCharts();
   dom.resultsList.replaceChildren();
-  state.views = [];
-
   if (!result) return;
 
   // Show only the variables still selected, in the order they were chosen.
@@ -919,7 +926,6 @@ function renderResult() {
   for (const dataset of datasets) {
     const built = buildPanel(dataset, result);
     dom.resultsList.append(built.panel);
-    state.views.push(built.view);
     // Chart.js measures the canvas, so it has to be in the document first.
     renderHistogram(built.canvas, {
       edges: built.edges,
