@@ -533,21 +533,55 @@ th {
 
 /* --- floating corner links ------------------------------------------------- */
 
-/* Bottom left, mirroring the Buy Me a Coffee widget's 18px offset on the right. */
+/*
+ * The GitHub link (bottom left) and the Buy Me a Coffee widget (bottom right) are
+ * both pinned to the bottom of the viewport at the same size and the same offset,
+ * so they read as a matched pair of corners.
+ */
+:root {
+  --corner-size: 56px;
+  --corner-offset: 18px; /* matches the widget's data-x_margin / data-y_margin */
+}
+
 .repo-link {
   position: fixed;
-  left: 18px;
-  bottom: 18px;
+  left: var(--corner-offset);
+  bottom: var(--corner-offset);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: var(--corner-size);
+  height: var(--corner-size);
   border-radius: 50%;
   background: var(--surface-1);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow);
   color: var(--text-secondary);
+}
+
+.repo-link svg {
+  width: 26px;
+  height: 26px;
+}
+
+/*
+ * Size the Buy Me a Coffee button to match. The widget injects its own element with
+ * inline styles, so these need !important to win. Scoped to the widget's own id, so
+ * if it ever renames that element these rules simply stop applying rather than
+ * breaking anything.
+ */
+#bmc-wbtn,
+#bmc-wbtn img {
+  width: var(--corner-size) !important;
+  height: var(--corner-size) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+#bmc-wbtn {
+  bottom: var(--corner-offset) !important;
+  right: var(--corner-offset) !important;
+  margin: 0 !important;
 }
 
 .repo-link:hover {
