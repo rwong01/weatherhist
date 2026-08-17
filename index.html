@@ -118,6 +118,10 @@
               <select id="variable"></select>
             </label>
             <label>
+              <span class="label-text">Reanalysis</span>
+              <select id="model"></select>
+            </label>
+            <label>
               <span class="label-text">Bins</span>
               <select id="bins">
                 <option value="auto" selected>Auto</option>
@@ -128,6 +132,7 @@
               </select>
             </label>
           </div>
+          <p id="model-note" class="hint"></p>
         </section>
 
         <div class="actions">
@@ -178,9 +183,11 @@
         Personal, non-commercial use.
       </p>
       <p>
-        Source: ECMWF <a href="https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5" rel="noopener">ERA5</a>
-        reanalysis via Open-Meteo's <code>era5_seamless</code> model — temperature and
-        humidity from ERA5-Land (~11 km), wind and precipitation from ERA5 (~25 km).
+        Reanalysis data: ECMWF
+        <a href="https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5" rel="noopener">ERA5</a>,
+        ERA5-Land and IFS HRES, served by Open-Meteo's
+        <a href="https://open-meteo.com/en/docs/historical-weather-api" rel="noopener">Historical Weather API</a>.
+        Which of them is used is set by the Reanalysis dropdown above.
       </p>
     </footer>
 

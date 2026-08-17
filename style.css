@@ -354,6 +354,13 @@ button:disabled {
   color: var(--text-muted);
 }
 
+/* Hint that is actively cautioning rather than just describing. */
+.hint.warn {
+  color: var(--text-primary);
+  border-left: 3px solid var(--series-2);
+  padding-left: 0.6rem;
+}
+
 .actions .hint {
   margin: 0;
 }

@@ -57,19 +57,29 @@ Params:
 - `wind_speed_unit=mph`, `temperature_unit=fahrenheit`, `precipitation_unit=inch` —
   a units toggle can come later; US units are the v1 default since the initial use
   case is US-based.
-- `models=era5_seamless` — see Data source below. Not specifying this would take
-  Open-Meteo's `best_match` default, which blends in IFS HRES from 2017 onward and
-  makes a long lookback window inhomogeneous.
+- `models` — user-selectable, see Data source below.
 
 ### Data source
 
-All data is ECMWF **ERA5 reanalysis** via Open-Meteo. Pinning `era5_seamless` keeps
-one reanalysis family across the whole window: temperature, humidity and soil from
-ERA5-Land (~11 km, 1950-), wind, precipitation and radiation from ERA5 (~25 km,
-1940-). The alternative `era5` gives uniform ~25 km ERA5 for every variable.
+All data is ECMWF reanalysis via Open-Meteo. Which one is a user choice, exposed as
+a Reanalysis dropdown, because it trades per-year accuracy against comparability
+over time:
 
-This matters most for the overlay feature: comparing a 10-year window against a
-30-year one is only meaningful if both are measured the same way.
+| Option | `models` | Coverage |
+| ------ | -------- | -------- |
+| Best match (default) | `best_match` | IFS HRES ~9 km from 2017, ERA5/ERA5-Land before |
+| ERA5 seamless | `era5_seamless` | ERA5-Land ~11 km (temp/humidity/soil) + ERA5 ~25 km (wind/precip/radiation) |
+| ERA5 only | `era5` | ERA5 ~25 km for everything, 1940- |
+
+`best_match` resolves local terrain better and is the most accurate answer for a
+single recent year. But its resolution changes at 2017, mid-window, and finer grids
+resolve extremes that coarser ones smooth out — so under `best_match` part of any
+10-vs-30-year difference is the model rather than the climate. The app surfaces a
+warning when an inhomogeneous model is combined with more than one window.
+
+The model is part of the cache key (the same year under a different model is a
+different number), is named in the results subtitle, and is recorded in both the PNG
+and CSV exports.
 
 ### Variables supported in v1
 

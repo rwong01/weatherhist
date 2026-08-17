@@ -67,26 +67,30 @@ Notes worth knowing:
 
 ## Data source
 
-Everything comes from **ECMWF ERA5 reanalysis**, served by Open-Meteo's
-[Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api).
+All data comes from Open-Meteo's
+[Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api),
+which serves ECMWF reanalysis. **Which reanalysis is a dropdown in the app**, because
+it's a real trade-off rather than a clear win either way:
 
-The app pins `models=era5_seamless` rather than accepting the API's default. That
-default is `best_match`, which per Open-Meteo's docs *"combines IFS HRES, ERA5 and
-ERA5-Land seamlessly"* — and **IFS HRES only covers 2017 onward**. Blending it in
-would make a lookback window inhomogeneous: recent years from a 9 km operational
-analysis, older years from 25 km ERA5. A shift in the distribution could then be an
-artifact of the model changing rather than the weather changing, which matters most
-when overlaying a 10-year window against a 30-year one.
+| Option | `models` | What it is | Best for |
+| ------ | -------- | ---------- | -------- |
+| **Best match** (default) | `best_match` | IFS HRES (~9 km) from 2017, ERA5/ERA5-Land before | "What was it actually like here?" |
+| ERA5 seamless | `era5_seamless` | ERA5-Land (~11 km) for temperature/humidity/soil, ERA5 (~25 km) for wind/precip/radiation | "Has it changed over time?" |
+| ERA5 only | `era5` | Every variable from ERA5 at ~25 km, 1940- | Maximum uniformity |
 
-With `era5_seamless` the whole window comes from one reanalysis family:
+`best_match` is the more accurate answer for any single recent year: a 9 km grid
+resolves terrain — valleys, ridgelines, coastlines — that a 25 km cell averages away.
 
-| Variables                          | Dataset   | Resolution | From |
-| ---------------------------------- | --------- | ---------- | ---- |
-| Temperature, humidity, soil        | ERA5-Land | ~11 km     | 1950 |
-| Wind, precipitation, radiation     | ERA5      | ~25 km     | 1940 |
+The catch is that the resolution changes at 2017, mid-window. Finer grids resolve
+local extremes that coarser ones smooth out, so post-2017 values read systematically
+higher at the same real weather. Overlay a 10-year window on a 30-year one under
+`best_match` and part of the difference is the model, not the climate. The app warns
+about exactly that combination, and the `era5*` options hold one resolution across
+the whole window so the comparison is like-for-like.
 
-To use uniform 25 km ERA5 for everything instead, change `MODEL` in
-`lib/weather.js` to `'era5'`.
+The chosen model is part of the cache key, appears in the results subtitle, and is
+recorded in both exports — the same year under a different model is a different
+number, and it should never be ambiguous which one produced a chart.
 
 Units are read from each response's `hourly_units` rather than hard-coded, so a
 change to the unit request parameters can't silently mislabel an axis.

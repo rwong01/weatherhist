@@ -3,6 +3,9 @@
 import { geocode, formatPlace, GeocodeError } from './lib/geocode.js';
 import {
   variableGroups,
+  MODELS,
+  DEFAULT_MODEL,
+  getModel,
   fetchWindows,
   seasonYears,
   daysInMonth,
@@ -32,7 +35,10 @@ const MONTHS = [
 // Any leap year works as the scaffold for the day dropdowns, so Feb 29 stays pickable.
 const LEAP_REFERENCE_YEAR = 2024;
 
-const ATTRIBUTION = 'Weather data by Open-Meteo.com (CC BY 4.0) · ECMWF ERA5 reanalysis';
+const ATTRIBUTION = 'Weather data by Open-Meteo.com (CC BY 4.0)';
+
+/** Provenance line for exports — the model materially changes the numbers. */
+const sourceLine = (model) => `${ATTRIBUTION} · reanalysis: ${model.id}`;
 
 const el = (id) => document.getElementById(id);
 
@@ -49,6 +55,8 @@ const dom = {
   endDay: el('end-day'),
   windowNote: el('window-note'),
   variable: el('variable'),
+  model: el('model'),
+  modelNote: el('model-note'),
   bins: el('bins'),
   generateBtn: el('generate-btn'),
   clearCacheBtn: el('clear-cache-btn'),
@@ -184,6 +192,25 @@ function currentWindow() {
   };
 }
 
+/**
+ * Explain the selected model, and warn when it is inhomogeneous *and* more than one
+ * window is selected — that combination is the one where the resolution change at
+ * 2017 can be mistaken for a trend.
+ */
+function updateModelNote() {
+  const model = getModel(dom.model.value);
+  const overlaying = currentLookbacks().length > 1;
+
+  dom.modelNote.textContent =
+    model.note +
+    (overlaying && !model.homogeneous
+      ? ' Heads up: with more than one window overlaid, part of the difference between' +
+        ' them may come from the 2017 resolution change rather than the weather.' +
+        ' Switch to an ERA5 option for a like-for-like comparison.'
+      : '');
+  dom.modelNote.classList.toggle('warn', overlaying && !model.homogeneous);
+}
+
 function currentLookbacks() {
   return [...dom.form.querySelectorAll('input[name="lookback"]:checked')]
     .map((input) => Number(input.value))
@@ -217,6 +244,7 @@ function updateWindowNote() {
 
   dom.windowNote.textContent = parts.join(' · ');
   dom.generateBtn.disabled = lookbacks.length === 0 || Boolean(state.inFlight);
+  updateModelNote();
 }
 
 // --- location ----------------------------------------------------------------
@@ -407,6 +435,7 @@ function renderResult() {
   dom.resultsSubtitle.textContent = [
     formatPlace(result.place),
     series.map((s) => `${s.label} (${s.yearSpan})`).join(' · '),
+    result.model.id,
     source,
   ].join(' · ');
 
@@ -454,7 +483,7 @@ function handleExportPNG() {
   downloadChartPNG(chart, {
     title: dom.resultsTitle.textContent,
     subtitle: dom.resultsSubtitle.textContent,
-    footer: ATTRIBUTION,
+    footer: sourceLine(state.view.result.model),
     theme: readTheme(),
     filename: `${exportBaseName()}.png`,
   });
@@ -486,8 +515,9 @@ function handleExportCSV() {
     ['latitude', result.place.latitude],
     ['longitude', result.place.longitude],
     ['date_window', `${result.startMD} to ${result.endMD}`],
+    ['reanalysis_model', result.model.id],
     ...series.map((s) => [`${s.lookback}y_years`, `${s.yearSpan} (n=${s.stats.n} days)`]),
-    ['source', ATTRIBUTION]
+    ['source', sourceLine(result.model)]
   );
 
   downloadCSV(rows, `${exportBaseName()}.csv`);
@@ -529,6 +559,7 @@ async function handleGenerate(event) {
       startMD,
       endMD,
       lookbacks,
+      modelId: dom.model.value,
       signal: controller.signal,
       onProgress: ({ done, total }) => setStatus(`Loading historical data… ${done}/${total} years`),
     });
@@ -582,6 +613,10 @@ function initVariableSelect() {
 }
 
 function init() {
+  MODELS.forEach((m) => dom.model.append(option(m.id, m.label)));
+  dom.model.value = DEFAULT_MODEL;
+  dom.model.addEventListener('change', updateModelNote);
+
   initVariableSelect();
   initDatePickers();
   onWindowChanged();
