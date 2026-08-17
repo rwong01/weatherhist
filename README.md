@@ -1,4 +1,4 @@
-# WxLookback
+# WeatherHist
 
 A static web app that shows how a weather variable was *distributed* over a slice of
 the calendar across the past 10, 20, or 30 years at any location.
