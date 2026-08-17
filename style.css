@@ -553,8 +553,59 @@ button:disabled {
   margin: 0;
 }
 
+/* --- selected variables ----------------------------------------------------- */
+
+/*
+ * The dropdown adds; these chips are the selection. Each carries its own remove
+ * button, so nothing has to explain how to deselect.
+ */
+.variable-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.variable-chips:empty {
+  display: none;
+}
+
+.variable-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.7rem;
+  background: var(--series-1-soft);
+  border: 1px solid var(--series-1);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+}
+
+.chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.chip-remove:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
 /* --- results --------------------------------------------------------------- */
 
+/* One panel per selected variable, stacked. */
 .results {
   margin-top: 1rem;
 }
@@ -619,10 +670,21 @@ button:disabled {
   vertical-align: baseline;
 }
 
-/* Comparison table shown in place of the tile grid when windows are overlaid. */
+/*
+ * The stats block scrolls inside itself. The comparison table has nine nowrap
+ * columns and is far wider than a phone; without this it pushed the whole document
+ * sideways instead of scrolling on its own, the same treatment .table-scroll gives
+ * the bin table.
+ */
+.stats-slot {
+  overflow-x: auto;
+  margin-bottom: 1.25rem;
+}
+
 .stats-table {
   width: 100%;
-  margin-bottom: 1.25rem;
+  min-width: max-content;
+  margin-bottom: 0;
 }
 
 .stats-table th,
@@ -642,7 +704,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
   gap: 1px;
-  margin: 0 0 1.25rem;
+  margin: 0;
   background: var(--border);
   border: 1px solid var(--border);
   border-radius: 8px;

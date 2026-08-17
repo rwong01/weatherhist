@@ -198,7 +198,13 @@ plain DOM updates are fine given the app's scope.
   under a key outside the data-cache namespace, so "Clear cache" doesn't reset it.
 - Date range quick-select for "Full year (Jan 1 - Dec 31)"; hand-editing the
   month/day pickers drops the preset back to "Custom".
-- Variable dropdown.
+- Variable dropdown that **adds** to a chip list, up to three at a time. Each chip
+  removes itself; the dropdown disables at the cap and its placeholder shows the
+  count. Every selected variable renders its own result panel with its own stats,
+  histogram, data table and PNG/CSV buttons, all sharing the query's other
+  parameters. Variables are never plotted together — different quantities in
+  different units — so each panel bins independently. Removing a chip drops its
+  panel without refetching the rest.
 - "Generate" button that triggers the fetch/cache/render flow.
 - Loading state with per-year progress while fetching (30 years of data takes a few
   seconds on first load).
@@ -214,7 +220,9 @@ plain DOM updates are fine given the app's scope.
   fixed-position button to `<body>`, so `app.js` re-parents it into the footer and
   CSS unpins it. If the widget never loads, the observer gives up and the footer
   simply shows the GitHub link.
-- Mobile-responsive, desktop-first.
+- Mobile-responsive, desktop-first. Anything wider than a phone — the bin table and
+  the multi-window stats table — scrolls inside its own container; the document
+  itself must never scroll horizontally.
 
 ### Let the controls do the explaining
 

@@ -3,6 +3,7 @@
 import { geocode, parseLatLon, formatPlace, GeocodeError } from './lib/geocode.js';
 import {
   variableGroups,
+  getVariable,
   MODELS,
   DEFAULT_MODEL,
   getModel,
@@ -21,7 +22,7 @@ import {
   binLabels,
   computeStats,
   renderHistogram,
-  destroyChart,
+  destroyAllCharts,
   getChart,
   readTheme,
 } from './lib/chart.js';
@@ -45,6 +46,9 @@ const THEME_KEY = 'weatherhist:theme';
 const SUGGEST_DEBOUNCE_MS = 250;
 const SUGGEST_MIN_CHARS = 2;
 
+// Three keeps one query's cost bounded: three variables x 30 years is 90 requests.
+const MAX_VARIABLES = 3;
+
 /** Provenance line for exports — the model materially changes the numbers. */
 const sourceLine = (model) => `${ATTRIBUTION} · reanalysis: ${model.id}`;
 
@@ -64,31 +68,27 @@ const dom = {
   endDay: el('end-day'),
   windowNote: el('window-note'),
   variable: el('variable'),
+  variableChips: el('variable-chips'),
+  resultsList: el('results-list'),
+  resultTemplate: el('result-template'),
   model: el('model'),
   modelNote: el('model-note'),
   bins: el('bins'),
   generateBtn: el('generate-btn'),
   clearCacheBtn: el('clear-cache-btn'),
   cacheNote: el('cache-note'),
-  exportPngBtn: el('export-png-btn'),
-  exportCsvBtn: el('export-csv-btn'),
   status: el('status'),
-  results: el('results'),
-  resultsTitle: el('results-title'),
-  resultsSubtitle: el('results-subtitle'),
-  stats: el('stats'),
-  canvas: el('histogram'),
   themeInputs: document.querySelectorAll('input[name="theme"]'),
-  binTableHead: document.querySelector('#bin-table thead'),
-  binTableBody: document.querySelector('#bin-table tbody'),
 };
 
 const state = {
   place: null,
+  /** Selected variable ids, in the order they were added. */
+  variableIds: ['wind_gust_max'], // the spec's motivating example
   /** Last successful fetch, kept so bin changes re-render without re-fetching. */
   result: null,
-  /** What the last render produced, so exports match exactly what's on screen. */
-  view: null,
+  /** One view per rendered panel, so each panel's exports match what it shows. */
+  views: [],
   inFlight: null,
   /** Typeahead: the places on screen, the keyboard cursor, and the live request. */
   suggestions: [],
@@ -320,7 +320,8 @@ function updateWindowNote() {
   }
 
   dom.windowNote.textContent = parts.join(' · ');
-  dom.generateBtn.disabled = lookbacks.length === 0 || Boolean(state.inFlight);
+  dom.generateBtn.disabled =
+    lookbacks.length === 0 || state.variableIds.length === 0 || Boolean(state.inFlight);
   updateChipColors();
   updateModelNote();
 }
@@ -512,6 +513,56 @@ async function handleSearch() {
   }
 }
 
+// --- variable selection -------------------------------------------------------
+
+/** Rebuild the chips and keep the dropdown in step with what's already chosen. */
+function renderVariableChips() {
+  dom.variableChips.replaceChildren(
+    ...state.variableIds.map((id) => {
+      const variable = getVariable(id);
+      const li = document.createElement('li');
+      li.className = 'variable-chip';
+      li.append(cell('span', variable.label));
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'chip-remove';
+      remove.title = `Remove ${variable.label}`;
+      remove.setAttribute('aria-label', `Remove ${variable.label}`);
+      remove.textContent = '×';
+      remove.addEventListener('click', () => {
+        state.variableIds = state.variableIds.filter((v) => v !== id);
+        renderVariableChips();
+        renderResult(); // drop that panel without refetching the others
+      });
+
+      li.append(remove);
+      return li;
+    })
+  );
+
+  const full = state.variableIds.length >= MAX_VARIABLES;
+  dom.variable.disabled = full;
+  dom.variable.value = '';
+
+  // Already-chosen options can't be picked twice; the placeholder says what's left.
+  for (const option of dom.variable.querySelectorAll('option[value]')) {
+    if (option.value) option.disabled = state.variableIds.includes(option.value);
+  }
+  dom.variable.querySelector('option[value=""]').textContent = full
+    ? `Maximum of ${MAX_VARIABLES} variables`
+    : `Add a variable (${state.variableIds.length}/${MAX_VARIABLES})…`;
+
+  dom.generateBtn.disabled =
+    state.variableIds.length === 0 || currentLookbacks().length === 0 || Boolean(state.inFlight);
+}
+
+function addVariable(id) {
+  if (!id || state.variableIds.includes(id) || state.variableIds.length >= MAX_VARIABLES) return;
+  state.variableIds.push(id);
+  renderVariableChips();
+}
+
 // --- rendering ---------------------------------------------------------------
 
 const STAT_COLUMNS = [
@@ -526,7 +577,7 @@ const STAT_COLUMNS = [
 ];
 
 /** Tile grid for a single window. */
-function renderStatTiles(series, variable, unit) {
+function buildStatTiles(series, variable, unit) {
   const dl = document.createElement('dl');
   dl.className = 'stats';
 
@@ -539,11 +590,11 @@ function renderStatTiles(series, variable, unit) {
     );
     dl.append(wrap);
   }
-  dom.stats.replaceChildren(dl);
+  return dl;
 }
 
 /** One row per window when they're overlaid, so the windows compare directly. */
-function renderStatTable(allSeries, variable, unit) {
+function buildStatTable(allSeries, variable, unit) {
   const table = document.createElement('table');
   table.className = 'stats-table';
 
@@ -570,11 +621,11 @@ function renderStatTable(allSeries, variable, unit) {
 
   table.append(thead, tbody);
   table.prepend(cell('caption', `All values in ${unit} unless noted.`, 'visually-hidden'));
-  dom.stats.replaceChildren(table);
+  return table;
 }
 
 /** Bin table: one Days/Share column pair per window. */
-function renderBinTable(edges, decimals, allSeries) {
+function fillBinTable(table, edges, decimals, allSeries) {
   const multi = allSeries.length > 1;
 
   const headRow = document.createElement('tr');
@@ -584,9 +635,9 @@ function renderBinTable(edges, decimals, allSeries) {
     days.prepend(swatch(series.color));
     headRow.append(days, cell('th', multi ? `${series.label} share` : 'Share'));
   }
-  dom.binTableHead.replaceChildren(headRow);
+  table.querySelector('thead').replaceChildren(headRow);
 
-  dom.binTableBody.replaceChildren(
+  table.querySelector('tbody').replaceChildren(
     ...binLabels(edges, decimals).map((label, i) => {
       const tr = document.createElement('tr');
       tr.append(cell('td', label));
@@ -603,15 +654,13 @@ function renderBinTable(edges, decimals, allSeries) {
   );
 }
 
-/** Re-derive bins/stats/chart from `state.result` — no network involved. */
-function renderResult() {
-  const result = state.result;
-  if (!result) return;
-
-  const { variable, windows, unit } = result;
+/** Build one panel for one variable and return the view backing its exports. */
+function buildPanel(dataset, context) {
+  const { variable, windows, unit } = dataset;
   const theme = readTheme();
 
-  // One shared set of edges across every window, so the overlay lines up.
+  // Bin edges are shared across this variable's windows, but not across variables —
+  // they're different quantities in different units.
   const pooled = windows.flatMap((w) => w.points.map((p) => p.value));
   const { edges, decimals } = computeEdges(pooled, dom.bins.value);
 
@@ -628,73 +677,103 @@ function renderResult() {
     };
   });
 
-  dom.results.hidden = false;
-  dom.resultsTitle.textContent =
-    `${variable.label} · ${formatMDLabel(result.startMD)} – ${formatMDLabel(result.endMD)}`;
-
-  const source = result.fetchedYears === 0
-    ? 'all years from cache'
-    : `${result.fetchedYears} year(s) fetched, ${result.cachedYears} from cache`;
-  dom.resultsSubtitle.textContent = [
-    formatPlace(result.place),
+  const panel = dom.resultTemplate.content.firstElementChild.cloneNode(true);
+  const title = `${variable.label} · ${formatMDLabel(context.startMD)} – ${formatMDLabel(context.endMD)}`;
+  const subtitle = [
+    formatPlace(context.place),
     series.map((s) => `${s.label} (${s.yearSpan})`).join(' · '),
-    result.model.id,
-    source,
+    context.model.id,
+    dataset.fetchedYears === 0
+      ? 'all years from cache'
+      : `${dataset.fetchedYears} year(s) fetched, ${dataset.cachedYears} from cache`,
   ].join(' · ');
 
-  if (series.length === 1) renderStatTiles(series[0], variable, unit);
-  else renderStatTable(series, variable, unit);
+  panel.querySelector('.results-title').textContent = title;
+  panel.querySelector('.results-subtitle').textContent = subtitle;
+  panel.querySelector('.stats-slot').append(
+    series.length === 1
+      ? buildStatTiles(series[0], variable, unit)
+      : buildStatTable(series, variable, unit)
+  );
+  fillBinTable(panel.querySelector('.bin-table'), edges, decimals, series);
 
-  renderBinTable(edges, decimals, series);
-  renderHistogram(dom.canvas, {
-    edges,
-    decimals,
-    series,
-    unit,
-    title: variable.short,
-    valueDecimals: variable.decimals,
-  });
-
+  const canvas = panel.querySelector('canvas');
   const summary = series
     .map((s) => `${s.label}: ${s.stats.n} days, mean ${formatNumber(s.stats.mean, variable.decimals)}`)
     .join('; ');
-  dom.canvas.setAttribute(
+  canvas.setAttribute(
     'aria-label',
     `Histogram of ${variable.label} in ${unit} for ` +
-      `${formatMDLabel(result.startMD)} to ${formatMDLabel(result.endMD)}. ${summary}.`
+      `${formatMDLabel(context.startMD)} to ${formatMDLabel(context.endMD)}. ${summary}.`
   );
 
-  state.view = { edges, decimals, series, variable, unit, result };
+  const view = { edges, decimals, series, variable, unit, canvas, title, subtitle, context };
+
+  for (const button of panel.querySelectorAll('[data-export]')) {
+    button.addEventListener('click', () =>
+      button.dataset.export === 'png' ? exportPNG(view) : exportCSV(view)
+    );
+  }
+
+  return { panel, view, canvas, edges, decimals, series, unit, variable };
+}
+
+/** Re-derive every panel from `state.result` — no network involved. */
+function renderResult() {
+  const result = state.result;
+  destroyAllCharts();
+  dom.resultsList.replaceChildren();
+  state.views = [];
+
+  if (!result) return;
+
+  // Show only the variables still selected, in the order they were chosen.
+  const datasets = state.variableIds
+    .map((id) => result.datasets.find((d) => d.variable.id === id))
+    .filter((d) => d && d.windows.some((w) => w.points.length > 0));
+
+  for (const dataset of datasets) {
+    const built = buildPanel(dataset, result);
+    dom.resultsList.append(built.panel);
+    state.views.push(built.view);
+    // Chart.js measures the canvas, so it has to be in the document first.
+    renderHistogram(built.canvas, {
+      edges: built.edges,
+      decimals: built.decimals,
+      series: built.series,
+      unit: built.unit,
+      title: built.variable.short,
+      valueDecimals: built.variable.decimals,
+    });
+  }
 }
 
 // --- exports -----------------------------------------------------------------
 
-function exportBaseName() {
-  const { variable, series, result } = state.view;
+function exportBaseName(view) {
   return [
     'weatherhist',
-    slug(variable.short),
-    `${result.startMD}_${result.endMD}`,
-    series.map((s) => `${s.lookback}y`).join('-'),
+    slug(view.variable.short),
+    `${view.context.startMD}_${view.context.endMD}`,
+    view.series.map((s) => `${s.lookback}y`).join('-'),
   ].join('_');
 }
 
-function handleExportPNG() {
-  const chart = getChart();
-  if (!chart || !state.view) return;
+function exportPNG(view) {
+  const chart = getChart(view.canvas);
+  if (!chart) return;
 
   downloadChartPNG(chart, {
-    title: dom.resultsTitle.textContent,
-    subtitle: dom.resultsSubtitle.textContent,
-    footer: sourceLine(state.view.result.model),
+    title: view.title,
+    subtitle: view.subtitle,
+    footer: sourceLine(view.context.model),
     theme: readTheme(),
-    filename: `${exportBaseName()}.png`,
+    filename: `${exportBaseName(view)}.png`,
   });
 }
 
-function handleExportCSV() {
-  if (!state.view) return;
-  const { edges, decimals, series, variable, unit, result } = state.view;
+function exportCSV(view) {
+  const { edges, decimals, series, variable, unit, context } = view;
 
   const header = ['bin_start', 'bin_end'];
   for (const s of series) header.push(`${s.lookback}y_days`, `${s.lookback}y_share_pct`);
@@ -714,16 +793,16 @@ function handleExportCSV() {
     [],
     ['variable', `${variable.label} (${unit})`],
     ['aggregation', `daily ${variable.agg}`],
-    ['location', formatPlace(result.place)],
-    ['latitude', result.place.latitude],
-    ['longitude', result.place.longitude],
-    ['date_window', `${result.startMD} to ${result.endMD}`],
-    ['reanalysis_model', result.model.id],
+    ['location', formatPlace(context.place)],
+    ['latitude', context.place.latitude],
+    ['longitude', context.place.longitude],
+    ['date_window', `${context.startMD} to ${context.endMD}`],
+    ['reanalysis_model', context.model.id],
     ...series.map((s) => [`${s.lookback}y_years`, `${s.yearSpan} (n=${s.stats.n} days)`]),
-    ['source', sourceLine(result.model)]
+    ['source', sourceLine(context.model)]
   );
 
-  downloadCSV(rows, `${exportBaseName()}.csv`);
+  downloadCSV(rows, `${exportBaseName(view)}.csv`);
 }
 
 // --- generate ----------------------------------------------------------------
@@ -742,6 +821,10 @@ async function handleGenerate(event) {
     setStatus('Pick at least one lookback window.', 'error');
     return;
   }
+  if (state.variableIds.length === 0) {
+    setStatus('Pick at least one variable.', 'error');
+    return;
+  }
 
   // A second Generate supersedes the first rather than racing it.
   if (state.inFlight) state.inFlight.abort();
@@ -749,7 +832,6 @@ async function handleGenerate(event) {
   state.inFlight = controller;
 
   const { startMD, endMD } = currentWindow();
-  const variableId = dom.variable.value;
 
   dom.generateBtn.disabled = true;
   setStatus('Loading historical data…');
@@ -758,25 +840,22 @@ async function handleGenerate(event) {
     const result = await fetchWindows({
       latitude: state.place.latitude,
       longitude: state.place.longitude,
-      variableId,
+      variableIds: state.variableIds,
       startMD,
       endMD,
       lookbacks,
       modelId: dom.model.value,
       signal: controller.signal,
-      onProgress: ({ done, total }) => setStatus(`Loading historical data… ${done}/${total} years`),
+      onProgress: ({ done, total }) => setStatus(`Loading historical data… ${done}/${total} requests`),
     });
 
     if (controller.signal.aborted) return;
 
-    if (result.windows.every((w) => w.points.length === 0)) {
-      destroyChart();
-      dom.results.hidden = true;
-      state.view = null;
-      setStatus(
-        `Open-Meteo returned no ${result.variable.hourly} data for that location and window.`,
-        'error'
-      );
+    const usable = result.datasets.filter((d) => d.windows.some((w) => w.points.length > 0));
+    if (usable.length === 0) {
+      state.result = null;
+      renderResult();
+      setStatus('Open-Meteo returned no usable data for that location and window.', 'error');
       return;
     }
 
@@ -784,20 +863,28 @@ async function handleGenerate(event) {
     renderResult();
 
     const notes = [];
-    const perYear = windowLength(startMD, endMD);
-    for (const w of result.windows) {
-      if (w.truncated) notes.push(`Only ${w.years.length} of ${w.lookback} years are in the archive.`);
-      const missing = perYear * w.years.length - w.points.length;
-      if (missing > 0) notes.push(`${w.lookback}y: ${missing} day(s) had incomplete hourly data and were skipped.`);
+    const empty = result.datasets.filter((d) => !usable.includes(d));
+    if (empty.length) {
+      notes.push(`No data for ${empty.map((d) => d.variable.label).join(', ')} at this location.`);
     }
-    setStatus(notes.join(' '));
+    const perYear = windowLength(startMD, endMD);
+    for (const dataset of usable) {
+      for (const w of dataset.windows) {
+        if (w.truncated) notes.push(`Only ${w.years.length} of ${w.lookback} years are in the archive.`);
+        const missing = perYear * w.years.length - w.points.length;
+        if (missing > 0) {
+          notes.push(`${dataset.variable.short} ${w.lookback}y: ${missing} day(s) had incomplete hourly data.`);
+        }
+      }
+    }
+    setStatus([...new Set(notes)].join(' '));
   } catch (err) {
     if (err?.name === 'AbortError') return;
     setStatus(err instanceof WeatherError ? err.message : 'Something went wrong fetching weather data.', 'error');
   } finally {
     if (state.inFlight === controller) {
       state.inFlight = null;
-      updateWindowNote(); // re-enables Generate if a window is still selected
+      updateWindowNote(); // re-enables Generate if the selection is still valid
     }
     updateCacheNote();
   }
@@ -805,14 +892,21 @@ async function handleGenerate(event) {
 
 // --- init --------------------------------------------------------------------
 
+/** The dropdown is an "add" control: picking an option appends a chip. */
 function initVariableSelect() {
+  const placeholder = option('', '');
+  placeholder.disabled = true;
+  dom.variable.append(placeholder);
+
   for (const [group, variables] of variableGroups()) {
     const optgroup = document.createElement('optgroup');
     optgroup.label = group;
     for (const v of variables) optgroup.append(option(v.id, v.label));
     dom.variable.append(optgroup);
   }
-  dom.variable.value = 'wind_gust_max'; // the spec's motivating example
+
+  dom.variable.addEventListener('change', () => addVariable(dom.variable.value));
+  renderVariableChips();
 }
 
 /**
@@ -850,8 +944,8 @@ function init() {
   dom.model.value = DEFAULT_MODEL;
   dom.model.addEventListener('change', updateModelNote);
 
-  initVariableSelect();
   initDatePickers();
+  initVariableSelect(); // after the pickers: the chips read the lookback state
   onWindowChanged();
   updateCacheNote();
 
@@ -870,9 +964,6 @@ function init() {
 
   // Bin count is a pure re-render of already-fetched values.
   dom.bins.addEventListener('change', renderResult);
-
-  dom.exportPngBtn.addEventListener('click', handleExportPNG);
-  dom.exportCsvBtn.addEventListener('click', handleExportCSV);
 
   dom.clearCacheBtn.addEventListener('click', () => {
     const removed = cache.clear();

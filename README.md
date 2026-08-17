@@ -110,6 +110,18 @@ change to the unit request parameters can't silently mislabel an axis.
 
 ## Variables
 
+**Up to three at a time.** The dropdown adds; the chips below it are the selection,
+each with its own remove button. Every selected variable gets its own panel — title,
+stats, histogram, data table, and its own PNG and CSV buttons — all sharing the same
+location, date window, lookback windows and reanalysis. Removing a chip drops that
+panel without refetching the others.
+
+Variables are *not* plotted together: they're different quantities in different
+units, so each panel computes its own bin edges. Only lookback windows share a chart.
+
+All the variables' requests share one concurrency pool, so three variables aren't
+three times slower than one.
+
 41 options across 7 groups: temperature & humidity, wind, precipitation, pressure &
 cloud, solar radiation, soil, and evapotranspiration. Each pairs an hourly variable
 with the daily aggregation that suits it (max, min, sum, or mean) — temperature is
@@ -126,11 +138,15 @@ histogram of them would mislead:
 
 ## Exports
 
-- **Export chart (PNG)** — the histogram composited onto an opaque background with
-  its title, subtitle, and attribution, so the image stands on its own.
-- **Export table (CSV)** — one row per bin, a days/share column pair per window, and
-  a provenance block (variable, aggregation, coordinates, year spans, source) below
-  the data so the header row stays first for spreadsheet imports.
+Each result panel carries its own pair of buttons, so a three-variable query yields
+three PNGs and three CSVs. Filenames encode the variable, date window and lookbacks,
+so they don't collide.
+
+- **PNG** — the histogram composited onto an opaque background with its title,
+  subtitle, and attribution, so the image stands on its own.
+- **CSV** — one row per bin, a days/share column pair per window, and a provenance
+  block (variable, aggregation, coordinates, year spans, model, source) below the
+  data so the header row stays first for spreadsheet imports.
 
 See [`PROJECT_SPEC.md`](PROJECT_SPEC.md) for the full v1 scope and non-goals.
 

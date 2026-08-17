@@ -151,7 +151,7 @@
           <div class="row">
             <label class="grow">
               <span class="label-text">Variable</span>
-              <select id="variable"></select>
+              <select id="variable" aria-describedby="variable-chips"></select>
             </label>
             <label>
               <span class="label-text">Reanalysis</span>
@@ -168,6 +168,7 @@
               </select>
             </label>
           </div>
+          <ul id="variable-chips" class="variable-chips" aria-label="Selected variables"></ul>
           <p id="model-note" class="hint" hidden></p>
         </section>
 
@@ -180,42 +181,47 @@
 
       <p id="status" class="status" role="status" aria-live="polite" hidden></p>
 
-      <section id="results" class="panel results" hidden>
-        <div class="results-head">
-          <div>
-            <h2 id="results-title" class="results-title"></h2>
-            <p id="results-subtitle" class="results-subtitle"></p>
-          </div>
-          <div class="export-actions">
-            <button id="export-png-btn" type="button" class="ghost icon-btn" title="Download the chart as a PNG image">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11m0 0 4-4m-4 4-4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2.4h16V17" stroke-linecap="round"/></svg>
-              PNG
-            </button>
-            <button id="export-csv-btn" type="button" class="ghost icon-btn" title="Download the data table as a CSV file">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11m0 0 4-4m-4 4-4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2.4h16V17" stroke-linecap="round"/></svg>
-              CSV
-            </button>
-          </div>
-        </div>
+      <div id="results-list"></div>
 
-        <!-- Filled with a tile grid for one window, or a comparison table for several. -->
-        <div id="stats"></div>
-
-        <div class="chart-wrap">
-          <canvas id="histogram" role="img" aria-label="Histogram of the selected weather variable"></canvas>
-        </div>
-
-        <details class="table-details">
-          <summary>Show data table</summary>
-          <div class="table-scroll">
-            <table id="bin-table">
-              <caption class="visually-hidden">Histogram bin counts</caption>
-              <thead></thead>
-              <tbody></tbody>
-            </table>
+      <template id="result-template">
+        <section class="panel results">
+          <div class="results-head">
+            <div>
+              <h2 class="results-title"></h2>
+              <p class="results-subtitle"></p>
+            </div>
+            <div class="export-actions">
+              <button type="button" class="ghost icon-btn" data-export="png" title="Download this chart as a PNG image">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11m0 0 4-4m-4 4-4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2.4h16V17" stroke-linecap="round"/></svg>
+                PNG
+              </button>
+              <button type="button" class="ghost icon-btn" data-export="csv" title="Download this data table as a CSV file">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6v11m0 0 4-4m-4 4-4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2.4h16V17" stroke-linecap="round"/></svg>
+                CSV
+              </button>
+            </div>
           </div>
-        </details>
-      </section>
+
+          <!-- A tile grid for one window, or a comparison table for several. -->
+          <div class="stats-slot"></div>
+
+          <div class="chart-wrap">
+            <canvas role="img"></canvas>
+          </div>
+
+          <details class="table-details">
+            <summary>Show data table</summary>
+            <div class="table-scroll">
+              <table class="bin-table">
+                <caption class="visually-hidden">Histogram bin counts</caption>
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+      </template>
+
     </main>
 
     <footer class="page-footer">
