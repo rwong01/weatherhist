@@ -302,8 +302,10 @@ function updateModelNote() {
   dom.modelNote.hidden = !warn;
   dom.modelNote.classList.toggle('warn', warn);
   dom.modelNote.textContent = warn
-    ? 'Comparing windows on this model: part of the difference between them may come' +
-      ' from its 2017 resolution change rather than the weather.'
+    ? `${model.shortLabel}'s resolution jumps to ~9 km in 2017; before that it's ~11-25 km. ` +
+      "You've picked windows of different lengths, so they cover different mixes of years on " +
+      "either side of that jump — some of the difference between them may be that resolution " +
+      'change, not the actual weather. Pick an ERA5 option above to compare on equal footing.'
     : '';
 }
 

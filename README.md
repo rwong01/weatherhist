@@ -171,8 +171,8 @@ it's a real trade-off rather than a clear win either way:
 | Option | `models` | What it is | Best for |
 | ------ | -------- | ---------- | -------- |
 | **Best match** (default) | `best_match` | IFS HRES (~9 km) from 2017, ERA5/ERA5-Land before | "What was it actually like here?" |
-| ERA5 seamless | `era5_seamless` | ERA5-Land (~11 km) for temperature/humidity/soil, ERA5 (~25 km) for wind/precip/radiation | "Has it changed over time?" |
-| ERA5 only | `era5` | Every variable from ERA5 at ~25 km, 1940- | Maximum uniformity |
+| ERA5 seamless | `era5_seamless` | ERA5-Land (~11 km) for temperature/humidity/soil, ERA5 (~25 km) for wind/precip/radiation — constant per variable across all years | "Has it changed over time?" |
+| ERA5 only | `era5` | Every variable from ERA5 at ~25 km, every year, 1940- | Maximum uniformity |
 
 `best_match` is the more accurate answer for any single recent year: a 9 km grid
 resolves terrain — valleys, ridgelines, coastlines — that a 25 km cell averages away.
@@ -183,6 +183,14 @@ higher at the same real weather. Overlay a 10-year window on a 30-year one under
 `best_match` and part of the difference is the model, not the climate. The app warns
 about exactly that combination, and the `era5*` options hold one resolution across
 the whole window so the comparison is like-for-like.
+
+`era5_seamless` and `era5` aren't the same thing, though. `era5_seamless` gives
+temperature, humidity and soil the finer ~11 km ERA5-Land grid — still constant
+across every year, just not the same resolution as wind, precipitation and
+radiation, which stay on ERA5's ~25 km grid. `era5` skips that upgrade entirely
+and holds *every* variable at ERA5's uniform ~25 km, all years — the simplest,
+most-uniform option, at the cost of the finer land detail `era5_seamless` gives
+temperature and humidity.
 
 The chosen model is part of the cache key, appears in the results subtitle, and is
 recorded in both exports — the same year under a different model is a different
