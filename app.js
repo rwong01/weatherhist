@@ -16,6 +16,7 @@ import {
   WeatherError,
 } from './lib/weather.js';
 import * as cache from './lib/cache.js';
+import * as recent from './lib/recent.js';
 import {
   computeEdges,
   binValues,
@@ -60,15 +61,18 @@ const dom = {
   searchBtn: el('search-btn'),
   geoResults: el('geo-results'),
   geoSpinner: el('geo-spinner'),
-  selectedPlace: el('selected-place'),
+  geoOk: el('geo-ok'),
   preset: el('preset'),
   startMonth: el('start-month'),
   startDay: el('start-day'),
   endMonth: el('end-month'),
   endDay: el('end-day'),
   windowNote: el('window-note'),
-  variable: el('variable'),
-  variableChips: el('variable-chips'),
+  variableToggle: el('variable-toggle'),
+  variableTokens: el('variable-tokens'),
+  variablePanel: el('variable-panel'),
+  variableSearch: el('variable-search'),
+  variableOptions: el('variable-options'),
   resultsList: el('results-list'),
   resultTemplate: el('result-template'),
   model: el('model'),
@@ -320,8 +324,7 @@ function updateWindowNote() {
   }
 
   dom.windowNote.textContent = parts.join(' · ');
-  dom.generateBtn.disabled =
-    lookbacks.length === 0 || state.variableIds.length === 0 || Boolean(state.inFlight);
+  syncGenerateEnabled();
   updateChipColors();
   updateModelNote();
 }
@@ -330,10 +333,12 @@ function updateWindowNote() {
 
 function selectPlace(place) {
   state.place = place;
+  recent.add(place);
   closeSuggestions();
+  // The field itself is the confirmation; a tick marks it as resolved rather than
+  // just typed, so nothing has to restate the place underneath it.
   dom.locationInput.value = formatPlace(place);
-  dom.selectedPlace.hidden = false;
-  dom.selectedPlace.textContent = `Using ${formatPlace(place)}`;
+  dom.geoOk.hidden = false;
   setStatus('');
 }
 
@@ -362,10 +367,16 @@ function setActive(index) {
   });
 }
 
-function openSuggestions(places) {
+function openSuggestions(places, heading) {
   state.suggestions = places;
   state.activeIndex = -1;
   dom.geoResults.replaceChildren();
+
+  if (heading && places.length > 0) {
+    const li = cell('li', heading, 'geo-heading');
+    li.setAttribute('role', 'presentation');
+    dom.geoResults.append(li);
+  }
 
   if (places.length === 0) {
     // Reported in the list itself rather than the status bar, where the eye isn't.
@@ -429,23 +440,48 @@ async function loadSuggestions(query) {
   }
 }
 
+/** Offer this session's recent places; returns false if there aren't any. */
+function showRecent() {
+  const places = recent.list();
+  if (places.length === 0) {
+    closeSuggestions();
+    return false;
+  }
+  openSuggestions(places, 'Recent');
+  return true;
+}
+
 function onLocationInput() {
   // Typing invalidates the previously chosen place.
   state.place = null;
-  dom.selectedPlace.hidden = true;
+  dom.geoOk.hidden = true;
 
   clearTimeout(state.suggestTimer);
   const query = dom.locationInput.value.trim();
 
-  // Nothing to suggest for coordinates — they resolve without the geocoder.
+  // Nothing to fetch for an empty box or for coordinates, which resolve locally.
   if (query.length < SUGGEST_MIN_CHARS || parseLatLon(query)) {
     state.suggestController?.abort();
     dom.geoSpinner.hidden = true;
-    closeSuggestions();
+    if (query.length === 0) showRecent();
+    else closeSuggestions();
     return;
   }
 
   state.suggestTimer = setTimeout(() => loadSuggestions(query), SUGGEST_DEBOUNCE_MS);
+}
+
+/**
+ * Focusing the field offers recents rather than re-searching. A field already
+ * showing the chosen place isn't a query the user is composing.
+ */
+function onLocationFocus() {
+  const query = dom.locationInput.value.trim();
+  if (!query || (state.place && query === formatPlace(state.place))) {
+    showRecent();
+    return;
+  }
+  onLocationInput();
 }
 
 function onLocationKeydown(event) {
@@ -514,53 +550,195 @@ async function handleSearch() {
 }
 
 // --- variable selection -------------------------------------------------------
+//
+// A token field over a searchable checkbox list. Selecting and deselecting are the
+// same gesture in the same place, and 41 options are reachable by typing rather than
+// by scrolling a native dropdown.
 
-/** Rebuild the chips and keep the dropdown in step with what's already chosen. */
-function renderVariableChips() {
-  dom.variableChips.replaceChildren(
-    ...state.variableIds.map((id) => {
-      const variable = getVariable(id);
-      const li = document.createElement('li');
-      li.className = 'variable-chip';
-      li.append(cell('span', variable.label));
+/** Compact summary shown in the closed field. */
+function renderTokens() {
+  dom.variableTokens.replaceChildren();
 
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'chip-remove';
-      remove.title = `Remove ${variable.label}`;
-      remove.setAttribute('aria-label', `Remove ${variable.label}`);
-      remove.textContent = '×';
-      remove.addEventListener('click', () => {
-        state.variableIds = state.variableIds.filter((v) => v !== id);
-        renderVariableChips();
-        renderResult(); // drop that panel without refetching the others
-      });
-
-      li.append(remove);
-      return li;
-    })
-  );
-
-  const full = state.variableIds.length >= MAX_VARIABLES;
-  dom.variable.disabled = full;
-  dom.variable.value = '';
-
-  // Already-chosen options can't be picked twice; the placeholder says what's left.
-  for (const option of dom.variable.querySelectorAll('option[value]')) {
-    if (option.value) option.disabled = state.variableIds.includes(option.value);
+  if (state.variableIds.length === 0) {
+    dom.variableTokens.append(cell('span', 'Choose a variable…', 'tokens-placeholder'));
+    return;
   }
-  dom.variable.querySelector('option[value=""]').textContent = full
-    ? `Maximum of ${MAX_VARIABLES} variables`
-    : `Add a variable (${state.variableIds.length}/${MAX_VARIABLES})…`;
 
-  dom.generateBtn.disabled =
-    state.variableIds.length === 0 || currentLookbacks().length === 0 || Boolean(state.inFlight);
+  for (const id of state.variableIds) {
+    const variable = getVariable(id);
+    const token = document.createElement('span');
+    token.className = 'token';
+    token.append(cell('span', variable.short));
+
+    const remove = document.createElement('span');
+    remove.className = 'token-remove';
+    remove.textContent = '×';
+    remove.title = `Remove ${variable.label}`;
+    // The field is a button, so removing must not also toggle the panel.
+    remove.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleVariable(id);
+    });
+
+    token.append(remove);
+    dom.variableTokens.append(token);
+  }
 }
 
-function addVariable(id) {
-  if (!id || state.variableIds.includes(id) || state.variableIds.length >= MAX_VARIABLES) return;
-  state.variableIds.push(id);
-  renderVariableChips();
+/** Rebuild the option rows, honouring the current search text and the cap. */
+function renderOptions() {
+  const query = dom.variableSearch.value.trim().toLowerCase();
+  const atCap = state.variableIds.length >= MAX_VARIABLES;
+  dom.variableOptions.replaceChildren();
+
+  let shown = 0;
+  for (const [group, variables] of variableGroups()) {
+    // Typing a group name ("wind") keeps the whole group, which is how people think.
+    const matches = variables.filter(
+      (v) => !query || v.label.toLowerCase().includes(query) || group.toLowerCase().includes(query)
+    );
+    if (matches.length === 0) continue;
+
+    dom.variableOptions.append(cell('div', group, 'option-group'));
+
+    for (const variable of matches) {
+      const selected = state.variableIds.includes(variable.id);
+      const row = document.createElement('div');
+      row.className = 'option-row';
+      row.role = 'option';
+      row.id = `variable-option-${variable.id}`;
+      row.dataset.id = variable.id;
+      row.setAttribute('aria-selected', String(selected));
+      // At the cap the unselected rows are inert; the selected ones still toggle off.
+      if (atCap && !selected) row.setAttribute('aria-disabled', 'true');
+
+      row.append(cell('span', '', 'option-box'), cell('span', variable.label));
+      row.addEventListener('mousedown', (event) => {
+        event.preventDefault(); // keep focus in the search box
+        toggleVariable(variable.id);
+      });
+      dom.variableOptions.append(row);
+      shown += 1;
+    }
+  }
+
+  if (shown === 0) {
+    dom.variableOptions.append(cell('div', `No variable matches "${dom.variableSearch.value.trim()}"`, 'option-empty'));
+  }
+  setActiveOption(0);
+}
+
+function optionRows() {
+  return [...dom.variableOptions.querySelectorAll('.option-row:not([aria-disabled])')];
+}
+
+function setActiveOption(index) {
+  const rows = optionRows();
+  if (rows.length === 0) {
+    dom.variableSearch.removeAttribute('aria-activedescendant');
+    return;
+  }
+  const active = (index + rows.length) % rows.length;
+  rows.forEach((row, i) => row.classList.toggle('is-active', i === active));
+  const row = rows[active];
+  dom.variableSearch.setAttribute('aria-activedescendant', row.id);
+  row.scrollIntoView({ block: 'nearest' });
+}
+
+function moveActiveOption(delta) {
+  const rows = optionRows();
+  const current = rows.findIndex((row) => row.classList.contains('is-active'));
+  setActiveOption(current + delta);
+}
+
+function toggleVariable(id) {
+  const selected = state.variableIds.includes(id);
+  if (selected) {
+    state.variableIds = state.variableIds.filter((v) => v !== id);
+  } else {
+    if (state.variableIds.length >= MAX_VARIABLES) return;
+    state.variableIds.push(id);
+  }
+
+  renderTokens();
+  renderOptions();
+  syncGenerateEnabled();
+  // Panels follow the selection immediately: an added variable needs data, but a
+  // removed one can just go.
+  if (selected) renderResult();
+}
+
+function openVariablePanel() {
+  dom.variablePanel.hidden = false;
+  dom.variableToggle.setAttribute('aria-expanded', 'true');
+  dom.variableSearch.value = '';
+  renderOptions();
+  dom.variableSearch.focus();
+}
+
+function closeVariablePanel() {
+  dom.variablePanel.hidden = true;
+  dom.variableToggle.setAttribute('aria-expanded', 'false');
+}
+
+function onVariableSearchKeydown(event) {
+  switch (event.key) {
+    case 'ArrowDown':
+      event.preventDefault();
+      moveActiveOption(1);
+      break;
+    case 'ArrowUp':
+      event.preventDefault();
+      moveActiveOption(-1);
+      break;
+    case 'Enter':
+    case ' ': {
+      const active = dom.variableOptions.querySelector('.option-row.is-active');
+      // Space is only a shortcut when it isn't part of what's being typed.
+      if (!active || (event.key === ' ' && dom.variableSearch.value.length > 0)) break;
+      event.preventDefault();
+      toggleVariable(active.dataset.id);
+      break;
+    }
+    case 'Escape':
+      event.preventDefault();
+      closeVariablePanel();
+      dom.variableToggle.focus();
+      break;
+    case 'Tab':
+      closeVariablePanel();
+      break;
+    default:
+      break;
+  }
+}
+
+function initVariablePicker() {
+  renderTokens();
+
+  dom.variableToggle.addEventListener('click', () =>
+    dom.variablePanel.hidden ? openVariablePanel() : closeVariablePanel()
+  );
+  dom.variableSearch.addEventListener('input', renderOptions);
+  dom.variableSearch.addEventListener('keydown', onVariableSearchKeydown);
+
+  // Clicking anywhere outside the control closes it. Registered in the capture
+  // phase on purpose: toggling a row re-renders the list, so in the bubble phase
+  // event.target would already be detached and closest() would report "outside".
+  document.addEventListener(
+    'mousedown',
+    (event) => {
+      if (dom.variablePanel.hidden) return;
+      if (!event.target.closest('.multiselect')) closeVariablePanel();
+    },
+    true
+  );
+}
+
+/** Generate needs at least one variable and one lookback window. */
+function syncGenerateEnabled() {
+  dom.generateBtn.disabled =
+    state.variableIds.length === 0 || currentLookbacks().length === 0 || Boolean(state.inFlight);
 }
 
 // --- rendering ---------------------------------------------------------------
@@ -892,23 +1070,6 @@ async function handleGenerate(event) {
 
 // --- init --------------------------------------------------------------------
 
-/** The dropdown is an "add" control: picking an option appends a chip. */
-function initVariableSelect() {
-  const placeholder = option('', '');
-  placeholder.disabled = true;
-  dom.variable.append(placeholder);
-
-  for (const [group, variables] of variableGroups()) {
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = group;
-    for (const v of variables) optgroup.append(option(v.id, v.label));
-    dom.variable.append(optgroup);
-  }
-
-  dom.variable.addEventListener('change', () => addVariable(dom.variable.value));
-  renderVariableChips();
-}
-
 /**
  * The Buy Me a Coffee widget appends a fixed-position button to <body>. Move it
  * into the footer so it sits in the page instead of floating over the content. If
@@ -945,7 +1106,7 @@ function init() {
   dom.model.addEventListener('change', updateModelNote);
 
   initDatePickers();
-  initVariableSelect(); // after the pickers: the chips read the lookback state
+  initVariablePicker();
   onWindowChanged();
   updateCacheNote();
 
@@ -954,7 +1115,10 @@ function init() {
   dom.searchBtn.addEventListener('click', handleSearch);
   dom.locationInput.addEventListener('input', onLocationInput);
   dom.locationInput.addEventListener('keydown', onLocationKeydown);
-  dom.locationInput.addEventListener('focus', onLocationInput);
+  // Both focus and click: clicking an already-focused field fires no focus event,
+  // and a click on the box should still offer recents.
+  dom.locationInput.addEventListener('focus', onLocationFocus);
+  dom.locationInput.addEventListener('click', onLocationFocus);
   dom.locationInput.addEventListener('blur', () => setTimeout(closeSuggestions, 0));
 
   dom.form.addEventListener('submit', handleGenerate);

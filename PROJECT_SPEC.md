@@ -180,6 +180,10 @@ plain DOM updates are fine given the app's scope.
 ## UI Requirements
 
 - Single page, no routing.
+- The location field remembers the last five places used **in this browser session**
+  (`sessionStorage`, so it clears with the tab and never leaves the browser) and
+  offers them on focus or click. A tick in the field marks a resolved place — the
+  field already shows it, so nothing restates it below.
 - Location input with **typeahead suggestions**: an ARIA combobox that queries the
   geocoder as the user types, debounced at 250 ms with a two-character floor and an
   in-memory response cache, aborting any request a later keystroke supersedes. Input
@@ -198,9 +202,12 @@ plain DOM updates are fine given the app's scope.
   under a key outside the data-cache namespace, so "Clear cache" doesn't reset it.
 - Date range quick-select for "Full year (Jan 1 - Dec 31)"; hand-editing the
   month/day pickers drops the preset back to "Custom".
-- Variable dropdown that **adds** to a chip list, up to three at a time. Each chip
-  removes itself; the dropdown disables at the cap and its placeholder shows the
-  count. Every selected variable renders its own result panel with its own stats,
+- Variable **searchable token field**, up to three at a time. The closed field shows
+  the selection as tokens (each with its own ×); opening it reveals a search box over
+  the grouped list, one tick box per row, so selecting and deselecting happen in the
+  same place. Search matches variable and group names. At the cap, unselected rows
+  are `aria-disabled` and visibly inert while selected rows still toggle off.
+  Keyboard: type to filter, arrows to move, Space/Enter to toggle, Escape to close. Every selected variable renders its own result panel with its own stats,
   histogram, data table and PNG/CSV buttons, all sharing the query's other
   parameters. Variables are never plotted together — different quantities in
   different units — so each panel bins independently. Removing a chip drops its

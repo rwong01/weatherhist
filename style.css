@@ -91,6 +91,15 @@
   box-sizing: border-box;
 }
 
+/*
+ * The `hidden` attribute is only `display: none` in the UA stylesheet, so any author
+ * `display` rule silently beats it — which is how the location tick ended up showing
+ * on an empty field. Make the attribute authoritative everywhere.
+ */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   padding: 2rem 1.25rem 3rem;
@@ -475,6 +484,21 @@ button:disabled {
   color: var(--text-muted);
 }
 
+/* Group label above the recent-locations list. */
+.geo-results .geo-heading {
+  padding: 0.35rem 0.6rem 0.2rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.geo-results .geo-heading:hover {
+  background: none;
+}
+
 .geo-results .geo-empty {
   cursor: default;
   color: var(--text-muted);
@@ -483,6 +507,21 @@ button:disabled {
 
 .geo-results .geo-empty:hover {
   background: none;
+}
+
+/* Marks the field as holding a resolved place. Shares the spinner's slot: a search
+   in flight means the field is being retyped, so the two never show at once. */
+.field-ok {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.7rem;
+  display: flex;
+  color: var(--series-3);
+}
+
+.field-ok svg {
+  width: 17px;
+  height: 17px;
 }
 
 /* Sits over the input's right edge while a suggestion request is in flight. */
@@ -508,15 +547,6 @@ button:disabled {
   .field-spinner {
     animation-duration: 2s;
   }
-}
-
-.selected-place {
-  margin: 0.75rem 0 0;
-  padding: 0.5rem 0.7rem;
-  background: var(--series-1-soft);
-  border-left: 3px solid var(--series-1);
-  border-radius: 0 6px 6px 0;
-  font-size: 0.9rem;
 }
 
 /* --- status ---------------------------------------------------------------- */
@@ -553,54 +583,201 @@ button:disabled {
   margin: 0;
 }
 
-/* --- selected variables ----------------------------------------------------- */
+/* --- variable multiselect ---------------------------------------------------- */
 
 /*
- * The dropdown adds; these chips are the selection. Each carries its own remove
- * button, so nothing has to explain how to deselect.
+ * A token field over a searchable checkbox list. Selecting and deselecting happen in
+ * the same place, and the search box makes 41 options reachable by typing instead of
+ * by scrolling.
  */
-.variable-chips {
+.multiselect {
+  position: relative;
+}
+
+.multiselect-field {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.55rem;
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  white-space: normal;
+}
+
+.multiselect-field:hover {
+  border-color: var(--series-1);
+}
+
+.multiselect-field[aria-expanded='true'] {
+  border-color: var(--series-1);
+  box-shadow: 0 0 0 1px var(--series-1);
+}
+
+.tokens {
+  display: flex;
+  flex: 1;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
-.variable-chips:empty {
-  display: none;
+.tokens-placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
-.variable-chip {
+.token {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.25rem 0.3rem 0.25rem 0.7rem;
+  gap: 0.25rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.5rem;
   background: var(--series-1-soft);
   border: 1px solid var(--series-1);
   border-radius: 999px;
   font-size: 0.8125rem;
+  font-weight: 500;
 }
 
-.chip-remove {
+.token-remove {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  font-size: 1rem;
-  line-height: 1;
-  border: none;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
-  background: none;
   color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.chip-remove:hover {
-  background: var(--surface-2);
+.token-remove:hover {
+  background: var(--surface-1);
   color: var(--text-primary);
+}
+
+.chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  transition: transform 120ms ease-out;
+}
+
+.multiselect-field[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+.multiselect-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.multiselect-search {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  margin-bottom: 4px;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.multiselect-search:focus {
+  outline: none;
+  border-color: var(--series-1);
+}
+
+.multiselect-options {
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.option-group {
+  padding: 0.5rem 0.55rem 0.2rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* Hover and the keyboard cursor share one highlight. */
+.option-row:hover,
+.option-row.is-active {
+  background: var(--surface-2);
+}
+
+.option-box {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  position: relative;
+}
+
+.option-box::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg) scale(0);
+  transition: transform 90ms ease-out;
+}
+
+.option-row[aria-selected='true'] .option-box {
+  background: var(--series-1);
+  border-color: var(--series-1);
+}
+
+.option-row[aria-selected='true'] .option-box::after {
+  transform: rotate(43deg) scale(1);
+}
+
+/* At the cap, unselected rows are visibly inert — no sentence needed. */
+.option-row[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.option-row[aria-disabled='true']:hover {
+  background: none;
+}
+
+.option-empty {
+  padding: 0.6rem 0.55rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
 }
 
 /* --- results --------------------------------------------------------------- */

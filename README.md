@@ -69,7 +69,15 @@ Notes worth knowing:
 
 ## Location search
 
-The location field is a typeahead. It queries Open-Meteo's geocoder as you type,
+The field remembers the **last five locations used in this browser session** and
+offers them the moment you focus or click it. They live in `sessionStorage`, so they
+vanish when the tab closes and are never shared beyond that browser — switching
+`lib/recent.js` to `localStorage` would make them persist across visits instead.
+
+A tick appears in the field once a place is resolved, which is the only confirmation
+needed — the field already shows the place, so there's no banner repeating it.
+
+Typing is a typeahead. It queries Open-Meteo's geocoder as you type,
 debounced at 250 ms with a two-character minimum, caching responses for the page
 view and aborting any request a later keystroke supersedes — a full city name costs
 one request, not one per keystroke. Input that looks like `lat, long` resolves
@@ -110,8 +118,16 @@ change to the unit request parameters can't silently mislabel an axis.
 
 ## Variables
 
-**Up to three at a time.** The dropdown adds; the chips below it are the selection,
-each with its own remove button. Every selected variable gets its own panel — title,
+**Up to three at a time**, chosen in a searchable token field: the closed field shows
+what's selected, opening it reveals a search box over the full grouped list with a
+tick box per row. Selecting and deselecting are the same gesture in the same place,
+and typing narrows 41 options instead of scrolling them (searching a group name like
+"soil" or "wind" keeps the whole group). At three, unselected rows go visibly inert
+while the selected ones still toggle off. Tokens carry their own × for removal, and
+the whole thing is keyboard-driven — type to filter, arrows to move, Space or Enter to
+toggle, Escape to close.
+
+Every selected variable gets its own panel — title,
 stats, histogram, data table, and its own PNG and CSV buttons — all sharing the same
 location, date window, lookback windows and reanalysis. Removing a chip drops that
 panel without refetching the others.

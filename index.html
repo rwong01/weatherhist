@@ -72,11 +72,17 @@
                 />
               </label>
               <span id="geo-spinner" class="field-spinner" hidden aria-hidden="true"></span>
+              <!-- Confirms the field holds a resolved place, rather than repeating it. -->
+              <span id="geo-ok" class="field-ok" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m5 13 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="visually-hidden">Location set</span>
+              </span>
               <ul id="geo-results" class="geo-results" role="listbox" aria-label="Location suggestions" hidden></ul>
             </div>
             <button id="search-btn" type="button" class="secondary">Search</button>
           </div>
-          <p id="selected-place" class="selected-place" hidden></p>
         </section>
 
         <!-- 2. Date window -->
@@ -149,10 +155,35 @@
         <section class="field-group">
           <h2 class="field-group-title">4 · Weather variable</h2>
           <div class="row">
-            <label class="grow">
-              <span class="label-text">Variable</span>
-              <select id="variable" aria-describedby="variable-chips"></select>
-            </label>
+            <div class="grow multiselect">
+              <span class="label-text" id="variable-label">Variables (up to 3)</span>
+              <button
+                type="button"
+                id="variable-toggle"
+                class="multiselect-field"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="variable-panel"
+                aria-labelledby="variable-label"
+              >
+                <span id="variable-tokens" class="tokens"></span>
+                <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9.5 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+
+              <div id="variable-panel" class="multiselect-panel" hidden>
+                <input
+                  id="variable-search"
+                  type="text"
+                  class="multiselect-search"
+                  autocomplete="off"
+                  placeholder="Search variables…"
+                  aria-label="Search variables"
+                />
+                <div id="variable-options" class="multiselect-options" role="listbox" aria-multiselectable="true"></div>
+              </div>
+            </div>
             <label>
               <span class="label-text">Reanalysis</span>
               <select id="model"></select>
@@ -168,7 +199,6 @@
               </select>
             </label>
           </div>
-          <ul id="variable-chips" class="variable-chips" aria-label="Selected variables"></ul>
           <p id="model-note" class="hint" hidden></p>
         </section>
 
