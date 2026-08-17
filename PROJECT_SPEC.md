@@ -170,7 +170,8 @@ The three lookback windows are nested and share an end year, so:
 │   ├── weather.js   # archive API wrapper + aggregation logic
 │   ├── cache.js     # localStorage cache helpers
 │   ├── chart.js     # histogram rendering with Chart.js
-│   └── export.js    # PNG + CSV download helpers
+│   ├── export.js    # PNG + CSV download helpers
+│   └── recent.js    # recent locations for this browser session
 └── PROJECT_SPEC.md  # this file
 ```
 

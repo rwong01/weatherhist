@@ -44,7 +44,8 @@ no API key.
 | `app.js`         | Control wiring and render orchestration                               |
 | `lib/geocode.js` | Open-Meteo geocoding (typeahead + explicit), raw `lat, long` parsing  |
 | `lib/weather.js` | Variable table, season-year math, archive fetch, daily aggregation    |
-| `lib/cache.js`   | `localStorage` cache, keyed per location/variable/window/year         |
+| `lib/cache.js`   | `localStorage` cache, keyed per location/variable/window/year          |
+| `lib/recent.js`  | Recent locations for this browser session (`sessionStorage`)           |
 | `lib/chart.js`   | Binning, summary statistics, histogram rendering                      |
 | `lib/export.js`  | PNG and CSV download helpers                                          |
 
@@ -129,7 +130,7 @@ toggle, Escape to close.
 
 Every selected variable gets its own panel — title,
 stats, histogram, data table, and its own PNG and CSV buttons — all sharing the same
-location, date window, lookback windows and reanalysis. Removing a chip drops that
+location, date window, lookback windows and reanalysis. Removing a token drops that
 panel without refetching the others.
 
 Variables are *not* plotted together: they're different quantities in different
